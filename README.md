@@ -101,7 +101,12 @@ Create a free Supabase project (no card required), then from
 | Variable | Which connection | Why |
 | --- | --- | --- |
 | `DATABASE_URL` | Transaction pooler, port 6543 | Runtime. Serverless opens a connection per invocation. |
-| `DATABASE_MIGRATION_URL` | Session pooler or direct, port 5432 | Migrations. DDL needs a session that outlives one statement. |
+| `DATABASE_MIGRATION_URL` | Session pooler, port 5432 | Migrations. DDL needs a session that outlives one statement. |
+
+Use the session pooler host (`aws-<n>-<region>.pooler.supabase.com`), not the
+direct `db.<ref>.supabase.co` one. The direct endpoint has been IPv6-only since
+January 2024 unless you buy the IPv4 add-on, so IPv4-only clients — GitHub
+Actions runners among them — cannot reach it.
 
 Then:
 
