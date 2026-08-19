@@ -8,8 +8,8 @@ pulls out the surrounding context, so the note is stored with the text it refers
 to rather than with a page number. Everything you have ever marked is then
 searchable across your whole library.
 
-> Status: phase 1 of 9. Scaffold only — no features yet. Phases are tracked at
-> the bottom of this file.
+> Status: phase 2 of 9. Schema and data access layer are written; no user-facing
+> features yet. Phases are tracked at the bottom of this file.
 
 ## Architecture
 
@@ -64,6 +64,13 @@ docs/
   DECISIONS.md   append-only log of every real fork in the road
 ```
 
+Access control is one rule, applied in one layer: every repository function
+takes a `UserId` and puts it in the WHERE clause. Ids are branded types, so the
+compiler rejects a `BookId` passed where a `UserId` belongs. A repository reads
+only its own table; when a write needs to prove ownership of a parent row — a
+page inside a book, an annotation on a page — that check lives in the feature's
+service.
+
 Every directory contains a `README.md` stating its single responsibility. Start
 with `src/features/README.md` — it defines the shape every feature follows.
 
@@ -84,6 +91,28 @@ npm run typecheck            # tsc --noEmit, strict
 npm run lint
 npm run build
 ```
+
+### Database
+
+Create a free Supabase project (no card required), then from
+**Project Settings → Database → Connection string** copy two URLs into
+`.env.local`:
+
+| Variable | Which connection | Why |
+| --- | --- | --- |
+| `DATABASE_URL` | Transaction pooler, port 6543 | Runtime. Serverless opens a connection per invocation. |
+| `DATABASE_MIGRATION_URL` | Session pooler or direct, port 5432 | Migrations. DDL needs a session that outlives one statement. |
+
+Then:
+
+```bash
+npm run db:generate          # after any change to src/db/schema
+npm run db:migrate           # apply pending migrations
+```
+
+Never run `drizzle-kit push`. It diffs against the live database and would drop
+the foreign keys added by `0001_auth_user_foreign_keys.sql`. See
+`src/db/README.md`.
 
 The app refuses to start if a required environment variable is missing or
 malformed, by design — see `src/config/env.public.ts`.
@@ -114,7 +143,7 @@ Notes on the things that actually bite, collected as we hit them.
 | # | Phase | Status |
 | --- | --- | --- |
 | 1 | Scaffold, config, folder structure, docs | done |
-| 2 | Supabase, schema, Drizzle migrations, scoped data access | |
+| 2 | Supabase, schema, Drizzle migrations, scoped data access | done |
 | 3 | Auth: sign up, sign in, protected routes, sessions | |
 | 4 | Books: Open Library search, create, library view | |
 | 5 | Pages: direct-to-storage upload, signed reads, page view | |

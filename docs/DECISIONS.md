@@ -127,3 +127,110 @@ side-by-side TypeScript 6 install. (b) TypeScript 6.0.3 for the whole toolchain.
 repo is meant to avoid, and a lint step that does not run is worse than an
 older compiler. Revisit once typescript-eslint ships TS 7 support. ESLint is
 pinned to 9.x for the same reason: no Next plugin declares support for 10 yet.
+
+---
+
+## 0008 — `user_id` on every table, including derivable ones
+
+**Problem.** A page's owner is derivable by joining up to its book, and an
+annotation's by joining twice. Storing `user_id` on all three duplicates it.
+
+**Options.** (a) Normalise: `user_id` on `books` only, join to scope anything
+else. (b) Denormalise: `user_id` on every table.
+
+**Decision.** (b).
+
+**Why.** Scoping is this app's only access control, so it has to be the easiest
+thing in the codebase to get right and the easiest to audit. With `user_id`
+present everywhere, every query filters on the table it is already reading, and
+"is this query scoped?" is answerable by looking at one WHERE clause instead of
+verifying a join chain. The cost is that inserts must set it consistently, which
+is why creating a page or an annotation goes through a service that checks the
+parent first.
+
+---
+
+## 0009 — Identifiers are branded types
+
+**Problem.** Every id is a uuid, so at the type level `userId`, `bookId` and
+`pageId` are all `string`. `findBook(bookId, userId)` with the arguments the
+wrong way round compiles fine and returns nothing, forever.
+
+**Options.** (a) Naming discipline. (b) Branded types: `string` plus a phantom
+property that exists only at compile time.
+
+**Decision.** (b), in `src/db/ids.ts`, applied to columns with Drizzle's
+`.$type<...>()` so the brands flow outward through inferred row types.
+
+**Why.** The mistake being prevented is a silent one — no crash, no error, just
+an empty result or, worse, a row attached to the wrong user. Zero runtime cost
+and no output. The price is a cast at each boundary where an untrusted string
+becomes an id, which is exactly where a `z.uuid()` check should be anyway.
+
+---
+
+## 0010 — Foreign keys to `auth.users` live in a hand-written migration
+
+**Problem.** We want `ON DELETE CASCADE` from `auth.users`, so deleting an
+account removes its library by database action rather than by remembering to.
+But declaring `auth.users` in the Drizzle schema makes drizzle-kit generate
+`CREATE SCHEMA "auth"` and `CREATE TABLE auth.users` — both of which fail
+against a real Supabase database, which already owns them. `schemaFilter:
+["public"]` does not suppress this; it was tried.
+
+**Options.** (a) Drop the foreign keys and let orphan rows exist. (b) Keep the
+generated migration free of `auth`, and add the constraints in a custom
+migration (`drizzle-kit generate --custom`).
+
+**Decision.** (b).
+
+**Why.** Referential integrity for account deletion is worth one hand-written
+file, and the custom migration is registered in drizzle's journal like any
+other, so it runs in order and only once. The cost is real and is written at
+the top of that file: `drizzle-kit push` diffs against the live database and
+would drop these constraints, because the schema files do not mention them.
+This project uses `generate` + `migrate` only.
+
+---
+
+## 0011 — Row level security is on, with no policies
+
+**Problem.** Scoping is enforced in application code. If that code has a bug,
+nothing else stops a cross-user read.
+
+**Options.** (a) Leave RLS off, since Drizzle connects with a role that bypasses
+it anyway. (b) Enable RLS on every table and write policies mirroring the
+application's scoping. (c) Enable RLS on every table and write no policies at
+all.
+
+**Decision.** (c).
+
+**Why.** RLS with no policies denies everything by default. That is exactly
+right for the paths we do not intend anyone to use: the Supabase anon key is
+shipped to the browser, and without this, anyone holding it could read every
+table over Supabase's REST endpoint. Option (b) sounds safer but means the same
+rule written twice in two languages, which drift apart. Option (a) leaves the
+public REST endpoint wide open.
+
+Assumption to verify in phase 3: the pooled connection string's role has
+BYPASSRLS. If it does not, our very first query returns zero rows and we will
+know immediately.
+
+---
+
+## 0012 — Missing and forbidden are the same answer
+
+**Problem.** What should a repository return when a row does not exist, versus
+when it exists but belongs to another user?
+
+**Options.** (a) `null` for missing, throw `ForbiddenError` for the other.
+(b) `null` for both.
+
+**Decision.** (b).
+
+**Why.** Telling the two apart tells a stranger which ids are real, which is
+enough to enumerate the size of someone's library. It also avoids inventing an
+exception hierarchy in phase 2 that nothing yet needs — route handlers map
+`null` to 404 and there is nothing to catch. If a case later genuinely needs the
+distinction internally, it gets a differently named function rather than a
+different failure mode.
