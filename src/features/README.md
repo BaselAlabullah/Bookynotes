@@ -14,5 +14,13 @@ Every feature folder uses the same slots, so learning one teaches you all of the
 | `hooks/` | React hooks specific to this domain. |
 
 A feature may import from `integrations/`, `db/`, `config/` and `components/ui/`.
-A feature importing another feature's repository is a smell: go through its
-service, or move the shared piece down a layer.
+
+Between features there is exactly one legal direction:
+
+- A **repository** touches only its own tables. Never another feature's.
+- A **service** may call another feature's repository.
+
+So `pages.service` calls `books.repository` to check that a book belongs to the
+user before writing a page into it, and `pages.repository` stays a thin, honest
+wrapper over one table. Because the arrow only ever points service to
+repository, there is no import cycle to reason about.
