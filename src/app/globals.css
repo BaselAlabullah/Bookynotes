@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+/* Tailwind v4 is configured in CSS, not in a JS config file. Anything declared
+   in @theme becomes both a CSS custom property and a utility class, so
+   --color-ink-500 gives you `text-ink-500`, `bg-ink-500`, etc. */
+@theme {
+  /* A system font stack rather than next/font. next/font downloads font files
+     at build time, which means the production build needs network access to
+     Google Fonts. Not worth the failure mode for a project this size. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+
+  /* Paper-and-ink palette. Annotations sit on photographs of book pages, so the
+     interface stays low-contrast and warm to avoid competing with them. */
+  --color-paper: #faf7f2;
+  --color-paper-dark: #17150f;
+  --color-ink: #1c1917;
+  --color-ink-muted: #78716c;
+  --color-accent: #b45309;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    body {
+      background-color: var(--color-paper-dark);
+      color: var(--color-paper);
+    }
+  }
+}
