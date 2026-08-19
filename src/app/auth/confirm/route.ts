@@ -7,21 +7,26 @@ import { createSupabaseServerClient } from "@/features/auth/supabase-server";
 /**
  * Where Supabase's confirmation emails land.
  *
- * This is only reached when email confirmation is enabled on the project. It
- * exchanges the one-time token in the link for a real session cookie, which is
- * why it must be a route handler: Server Components cannot write cookies.
+ * There are two ways a user can arrive here, because there are two email
+ * template styles, and a project can be using either:
  *
- * If you enable confirmation, Supabase's default email template will NOT point
- * here — it uses the implicit flow, which puts tokens in the URL fragment where
- * only the browser can see them. Change the template to:
+ * 1. `?code=...` — Supabase's DEFAULT template. The link goes to Supabase's own
+ *    /auth/v1/verify endpoint, which confirms the account and then redirects
+ *    here with a PKCE authorization code to exchange for a session.
  *
- *   {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email
+ * 2. `?token_hash=...&type=...` — a customised template that skips Supabase's
+ *    redirect and hands us the one-time token directly:
+ *
+ *      {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email
+ *
+ * Both are handled, because which one applies depends on a dashboard setting
+ * this code cannot see. Either way this must be a route handler and not a
+ * Server Component: it writes a session cookie, and Server Components cannot.
  */
 
-// Parsed rather than cast. `type` arrives from a URL, so it is a string from a
-// stranger until proven otherwise; `as EmailOtpType` would be a lie the
-// compiler happily believes.
-const confirmParamsSchema = z.object({
+// Parsed, not cast. These arrive from a URL, so they are strings from a stranger
+// until proven otherwise; `as EmailOtpType` would be a lie the compiler believes.
+const tokenHashParamsSchema = z.object({
   token_hash: z.string().min(1),
   type: z.enum([
     "signup",
@@ -34,19 +39,41 @@ const confirmParamsSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const params = confirmParamsSchema.safeParse({
-    token_hash: request.nextUrl.searchParams.get("token_hash"),
-    type: request.nextUrl.searchParams.get("type"),
+  const params = request.nextUrl.searchParams;
+  const code = params.get("code");
+
+  if (code) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (error) {
+      // The most common cause is not an expired link: PKCE stores a code
+      // verifier in a cookie when sign-up happens, so opening the email in a
+      // different browser or device leaves nothing to verify against. That case
+      // gets its own message because "expired" would send the user in circles.
+      redirect(
+        error.message.toLowerCase().includes("code verifier")
+          ? "/sign-in?error=confirmation-wrong-browser"
+          : "/sign-in?error=confirmation-failed",
+      );
+    }
+
+    redirect("/library");
+  }
+
+  const parsed = tokenHashParamsSchema.safeParse({
+    token_hash: params.get("token_hash"),
+    type: params.get("type"),
   });
 
-  if (!params.success) {
+  if (!parsed.success) {
     redirect("/sign-in?error=invalid-confirmation-link");
   }
 
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.verifyOtp({
-    type: params.data.type,
-    token_hash: params.data.token_hash,
+    type: parsed.data.type,
+    token_hash: parsed.data.token_hash,
   });
 
   if (error) {

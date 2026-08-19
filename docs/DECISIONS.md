@@ -359,3 +359,35 @@ deleted afterwards:
 Two things this caught that a passing build could not: a stale dev server on port
 3000 still serving an old bundle, and Next's private-folder convention silently
 excluding any route directory whose name begins with an underscore.
+
+---
+
+## 0019 — `/auth/confirm` handles both confirmation link styles
+
+**Problem.** Phase 3 shipped a confirmation handler that only understood
+`?token_hash=...&type=...`. Supabase's *default* email template does not send
+that: its link goes to Supabase's own `/auth/v1/verify`, which confirms the
+account and then redirects back with a PKCE `?code=...` to exchange. The account
+was being confirmed, but the user was bounced to `/sign-in` with an error the
+sign-in page did not even render.
+
+**Options.** (a) Require the custom email template and document it. (b) Handle
+`code` only, and drop the token_hash path. (c) Handle both.
+
+**Decision.** (c), plus rendering the error on the sign-in page.
+
+**Why.** Which style arrives depends on a dashboard setting this code cannot
+read, and getting it wrong is silent — the account works, the user just cannot
+tell. Supporting both costs about fifteen lines and removes a class of "it
+didn't work and I don't know why".
+
+Two details worth keeping:
+
+- The failure codes travel in the query string as **codes**, mapped to sentences
+  in `features/auth/auth.errors.ts`. Putting the message itself in the URL would
+  let anyone paint arbitrary text onto our own sign-in page — "your session
+  expired, re-enter your password" is a convincing thing to be able to render.
+- A failed exchange mentioning the code verifier gets its own message. PKCE
+  stores the verifier in a cookie at sign-up, so opening the email on a
+  different device is a distinct failure from an expired link, and telling
+  someone their link expired when it did not sends them round in a circle.

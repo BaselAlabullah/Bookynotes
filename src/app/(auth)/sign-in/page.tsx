@@ -1,11 +1,23 @@
 import type { Metadata } from "next";
 
 import { signInAction } from "@/features/auth/auth.actions";
+import { confirmationErrorMessage } from "@/features/auth/auth.errors";
 import { CredentialsForm } from "@/features/auth/components/credentials-form";
 
 export const metadata: Metadata = { title: "Sign in · Marginalia" };
 
-export default function SignInPage() {
+/**
+ * `searchParams` is a promise in Next 16, because the page can begin rendering
+ * before the request's query string is needed.
+ */
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
+  const confirmationError = confirmationErrorMessage(error);
+
   return (
     <>
       <header className="flex flex-col gap-2">
@@ -14,6 +26,15 @@ export default function SignInPage() {
           Your library and every note in it.
         </p>
       </header>
+
+      {confirmationError ? (
+        <p
+          role="alert"
+          className="rounded-md border border-red-600/40 px-3 py-2 text-sm text-red-600"
+        >
+          {confirmationError}
+        </p>
+      ) : null}
 
       <CredentialsForm
         action={signInAction}
