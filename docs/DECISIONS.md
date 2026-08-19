@@ -234,3 +234,128 @@ exception hierarchy in phase 2 that nothing yet needs — route handlers map
 `null` to 404 and there is nothing to catch. If a case later genuinely needs the
 distinction internally, it gets a differently named function rather than a
 different failure mode.
+
+---
+
+## 0013 — Confirming the assumptions in 0002 and 0011 against the live database
+
+Not a fork, a receipt. The first migration ran against the real Supabase project
+on 2026-08-19, and the two things earlier entries recorded as unverified are now
+verified:
+
+- **0011's BYPASSRLS assumption holds.** The pooled connection authenticates as
+  role `postgres` with `rolbypassrls = true` (and, worth noting, `rolsuper =
+  false` — Supabase does not hand out superuser). So RLS is enabled on all three
+  tables with zero policies, denying every path that is not ours, while the
+  application's own scoping continues to work.
+- **The generated `tsvector` column was accepted.** Postgres resolved
+  `to_tsvector('english', …)` to the immutable `to_tsvector(regconfig, text)`
+  form, so the STORED generated column and its GIN index both exist.
+
+Also confirmed present: the three `ON DELETE CASCADE` foreign keys into
+`auth.users` from the hand-written migration 0001, the seven check constraints,
+and the `(book_id, page_number)` unique constraint.
+
+---
+
+## 0014 — Auth uses Server Functions, not route handlers plus fetch
+
+**Problem.** The credential forms need to reach the server.
+
+**Options.** (a) `POST /api/auth/sign-in` with a client-side `fetch`, JSON in and
+JSON out. (b) Server Functions passed straight to a form's `action`.
+
+**Decision.** (b).
+
+**Why.** The form posts directly to the function: no fetch, no JSON envelope, no
+client-side state machine, and the form still works if the JavaScript bundle
+fails to load. `useActionState` gives the pending and error states for free.
+
+The cost is real and shapes decision 0016: a Server Function is not a route. It
+is a POST to whichever route rendered it, so it can move out from under a
+protected path without anything visibly changing.
+
+---
+
+## 0015 — `getUser()`, never `getSession()`
+
+**Problem.** Supabase offers two ways to read the current session on the server.
+
+**Options.** (a) `getSession()` — decodes the cookie locally. Fast, no network.
+(b) `getUser()` — sends the token to Supabase's auth server, which verifies the
+signature and that the user still exists. One network call per request.
+
+**Decision.** (b), everywhere, with no exception for "read-only" paths.
+
+**Why.** The cookie is data supplied by whoever is making the request. Trusting
+its contents without verification is an authentication bypass, not a performance
+optimisation. The latency is real and is the correct price.
+
+---
+
+## 0016 — Authorization lives in `requireUser()`, not in the proxy
+
+**Problem.** Where do we stop an unauthenticated request?
+
+**Options.** (a) In `src/proxy.ts`, by matching protected paths — the pattern
+most Next tutorials show. (b) In a layout for the protected route group.
+(c) In a `requireUser()` call at the top of every protected page and Server
+Function.
+
+**Decision.** (c), with (b) as a convenience on top. The proxy does no
+authorization at all; its only job is refreshing the session cookie.
+
+**Why.** Next's documentation is explicit that Server Functions are POSTs to the
+route that rendered them, so a matcher edit or a component move can drop them
+out of a proxy's coverage with no error and no visible change. Path matching also
+fails open: forget to list a path and it is public. `requireUser()` fails closed
+and sits next to the data access it guards. This is also why the library page
+calls it even though its layout already did — the page's guarantee should not
+depend on where it sits in the tree.
+
+---
+
+## 0017 — The session cookie is httpOnly
+
+**Problem.** `@supabase/ssr` writes the auth cookie readable by JavaScript,
+because its browser client reads the session from `document.cookie`. Any XSS bug
+could then exfiltrate an access token and a refresh token.
+
+**Options.** (a) Leave the library default and keep the option of a browser
+client. (b) Override the cookie options to `httpOnly`, giving up the browser
+client entirely.
+
+**Decision.** (b), in `features/auth/session-cookie.ts`, applied in both places
+we write cookies. Verified against a running server: the response carries
+`Secure; HttpOnly; SameSite=lax`.
+
+**Why.** Every Supabase Auth call in this app happens in a Server Function or a
+route handler, so nothing needs to read the session in the browser. Given that,
+leaving a refresh token exposed to script buys nothing.
+
+The consequence, stated so it is not discovered by surprise: `createBrowserClient()`
+will not see a session anywhere in this app. Phase 5 does not need one (uploads
+use a signed URL and a plain `fetch`) and neither does phase 7 (the client polls
+our own API). If a later phase genuinely does, reverting is one file — and it is
+a security trade-off, not a config tweak.
+
+---
+
+## 0018 — Verifying phase 3 against a running server
+
+Not a fork, a receipt. Auth was tested end to end on 2026-08-19 against the
+production build and the live Supabase project, using a seeded user that was
+deleted afterwards:
+
+- `GET /library` with no session gave `307` to `/sign-in`.
+- Signing in through the real `createSupabaseServerClient()` set the session
+  cookie, after which `GET /library` gave `200` and rendered the user's email.
+- `GET /sign-in` while signed in gave `307` to `/library`.
+- A wrong password gave `Invalid login credentials`, which does not reveal
+  whether the account exists.
+- Deleting the user removed their book with no application code involved,
+  confirming the `ON DELETE CASCADE` from decision 0010.
+
+Two things this caught that a passing build could not: a stale dev server on port
+3000 still serving an old bundle, and Next's private-folder convention silently
+excluding any route directory whose name begins with an underscore.

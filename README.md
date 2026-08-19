@@ -8,8 +8,8 @@ pulls out the surrounding context, so the note is stored with the text it refers
 to rather than with a page number. Everything you have ever marked is then
 searchable across your whole library.
 
-> Status: phase 2 of 9. Schema and data access layer are written; no user-facing
-> features yet. Phases are tracked at the bottom of this file.
+> Status: phase 3 of 9. You can sign up, sign in, and reach a protected library
+> page. Books arrive next. Phases are tracked at the bottom of this file.
 
 ## Architecture
 
@@ -142,6 +142,14 @@ Notes on the things that actually bite, collected as we hit them.
 - **No `next/font`.** It downloads font files during the build, which makes the
   production build depend on network access to Google Fonts. A system font stack
   costs nothing and cannot fail.
+- **Supabase's built-in email sender is rate limited to a handful of messages an
+  hour** and is explicitly not for production. If you leave email confirmation
+  enabled, sign-up appears to work and the email silently never arrives. Either
+  turn confirmation off (Auth -> Providers -> Email) or configure custom SMTP.
+- **Confirmation links need a template change.** Supabase's default email
+  template uses the implicit flow, which puts tokens in the URL fragment where
+  only the browser can see them. To reach `/auth/confirm`, set the template to
+  `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`.
 
 ## Phases
 
@@ -149,7 +157,7 @@ Notes on the things that actually bite, collected as we hit them.
 | --- | --- | --- |
 | 1 | Scaffold, config, folder structure, docs | done |
 | 2 | Supabase, schema, Drizzle migrations, scoped data access | done |
-| 3 | Auth: sign up, sign in, protected routes, sessions | |
+| 3 | Auth: sign up, sign in, protected routes, sessions | done |
 | 4 | Books: Open Library search, create, library view | |
 | 5 | Pages: direct-to-storage upload, signed reads, page view | |
 | 6 | Canvas layer: normalized coordinates, pins, resize and zoom | |
