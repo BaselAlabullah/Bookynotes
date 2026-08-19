@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+build/
+
+# Local environment values. Only .env.example is committed.
+.env
+.env*.local
+
+*.tsbuildinfo
+next-env.d.ts
+
+.DS_Store
+.vercel/
