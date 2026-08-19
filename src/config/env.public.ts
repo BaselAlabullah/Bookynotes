@@ -15,10 +15,24 @@ import { z } from "zod";
 const publicEnvSchema = z.object({
   /** Absolute origin of this deployment. Used for auth callbacks and metadata. */
   NEXT_PUBLIC_APP_URL: z.url(),
+
+  /** Supabase project origin, e.g. https://<ref>.supabase.co */
+  NEXT_PUBLIC_SUPABASE_URL: z.url(),
+
+  /**
+   * Supabase publishable key (formerly the anon key). Public on purpose.
+   * It is only safe because row level security is enabled on every table with
+   * zero policies, so this key can read nothing over Supabase's REST endpoint.
+   * Verified against the live project — see DECISIONS 0011 and 0013.
+   */
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().startsWith("sb_publishable_"),
 });
 
 const parsed = publicEnvSchema.safeParse({
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
 });
 
 if (!parsed.success) {
