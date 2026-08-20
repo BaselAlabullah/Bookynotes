@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================================
-REM  Marginalia - start everything.
+REM  Bookynotes - start everything.
 REM
 REM  Brings up both halves of the app in their own windows:
 REM
@@ -22,7 +22,7 @@ REM running it from a prompt somewhere else.
 cd /d "%~dp0"
 
 echo.
-echo   Marginalia
+echo   Bookynotes
 echo   ----------
 echo.
 
@@ -100,7 +100,7 @@ if not exist "%PYTHON%" (
 echo   [^>] page-processor  http://127.0.0.1:8000
 REM  --app-dir puts page-processor on Python's path, so this needs no "cd" and
 REM  therefore no quotes inside quotes - which batch handles badly.
-start "Marginalia page-processor" cmd /k "set PAGE_PROCESSOR_SECRET=%PAGE_SECRET%&& page-processor\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir page-processor --host 127.0.0.1 --port 8000"
+start "Bookynotes page-processor" cmd /k "set PAGE_PROCESSOR_SECRET=%PAGE_SECRET%&& page-processor\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir page-processor --host 127.0.0.1 --port 8000"
 
 REM Give uvicorn a moment to bind, so the first upload does not race it.
 REM
@@ -115,7 +115,7 @@ echo.
 echo   Both run in their own windows. Ctrl+C in a window stops that half.
 echo.
 REM  start inherits this window's directory, which is already the repo root.
-start "Marginalia web" cmd /k "npm run dev"
+start "Bookynotes web" cmd /k "npm run dev"
 
 REM Wait for Next to compile before opening a browser at a page that is not
 REM there yet.

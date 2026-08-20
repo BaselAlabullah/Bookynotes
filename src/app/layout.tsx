@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   // NEXT_PUBLIC_APP_URL is missing, which is the earliest possible warning that
   // auth callbacks would have been broken in production.
   metadataBase: new URL(publicEnv.NEXT_PUBLIC_APP_URL),
-  title: "Marginalia",
+  title: "Bookynotes",
   description: "Annotate photographs of physical book pages and search them.",
 };
 

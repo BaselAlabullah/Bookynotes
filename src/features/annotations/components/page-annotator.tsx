@@ -13,10 +13,12 @@ import {
   type NormalizedRect,
 } from "../annotations.types";
 import { AnnotationCanvas } from "./annotation-canvas";
+import { DeleteAnnotationButton } from "./delete-annotation-button";
 
 type PageAnnotatorProps = {
   pageId: PageId;
   imageUrl: string;
+  imageStorageKey: string;
   imageWidth: number;
   imageHeight: number;
   annotations: Annotation[];
@@ -44,6 +46,7 @@ function isTypingTarget(target: EventTarget | null) {
 export function PageAnnotator({
   pageId,
   imageUrl,
+  imageStorageKey,
   imageWidth,
   imageHeight,
   annotations,
@@ -213,6 +216,7 @@ export function PageAnnotator({
         <div className="annotation-canvas-region min-w-0">
           <AnnotationCanvas
             imageUrl={imageUrl}
+            imageStorageKey={imageStorageKey}
             imageWidth={imageWidth}
             imageHeight={imageHeight}
             zoom={zoom}
@@ -271,6 +275,9 @@ export function PageAnnotator({
                           <AnnotationExtraction annotation={annotation} isEnriching={enriching.has(annotation.id)} />
                         </button>
                         <AnnotationEnrichmentAction annotation={annotation} isEnriching={enriching.has(annotation.id)} onEnrich={enrich} />
+                        <div className="mt-3">
+                          <DeleteAnnotationButton id={annotation.id} />
+                        </div>
                       </div>
                     </li>
                   );

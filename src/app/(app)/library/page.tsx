@@ -5,8 +5,9 @@ import { requireUser } from "@/features/auth/auth.session";
 import { signBookCovers } from "@/features/books/books.cover";
 import { listBooks } from "@/features/books/books.repository";
 import { LibraryList } from "@/features/books/components/library-list";
+import { getBookDeletionImpacts } from "@/features/books/books.service";
 
-export const metadata: Metadata = { title: "Library · Marginalia" };
+export const metadata: Metadata = { title: "Library · Bookynotes" };
 
 /**
  * `requireUser()` is called here even though the layout already did, so the
@@ -14,12 +15,23 @@ export const metadata: Metadata = { title: "Library · Marginalia" };
  * produces the `UserId` that `listBooks` demands — there is no way to reach the
  * query without it.
  */
-export default async function LibraryPage() {
+export default async function LibraryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cleanup?: string }>;
+}) {
   const user = await requireUser();
   const books = await listBooks(user.id);
+  const { cleanup } = await searchParams;
   // One batched, cached signing request for every cover we hold our own copy
   // of. Books added before that existed fall back to Open Library's URL.
-  const coverUrls = await signBookCovers(books);
+  const [coverUrls, deletionImpacts] = await Promise.all([
+    signBookCovers(books),
+    getBookDeletionImpacts(
+      user.id,
+      books.map((book) => book.id),
+    ),
+  ]);
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-8">
@@ -35,7 +47,13 @@ export default async function LibraryPage() {
         ) : null}
       </header>
 
-      <LibraryList books={books} coverUrls={coverUrls} />
+      {cleanup === "needed" ? (
+        <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">
+          The library entry was deleted, but some stored files still need cleanup. Run the orphan sweep.
+        </p>
+      ) : null}
+
+      <LibraryList books={books} coverUrls={coverUrls} deletionImpacts={deletionImpacts} />
     </main>
   );
 }

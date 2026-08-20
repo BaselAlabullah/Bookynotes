@@ -4,7 +4,7 @@ import { signInAction } from "@/features/auth/auth.actions";
 import { confirmationErrorMessage } from "@/features/auth/auth.errors";
 import { CredentialsForm } from "@/features/auth/components/credentials-form";
 
-export const metadata: Metadata = { title: "Sign in · Marginalia" };
+export const metadata: Metadata = { title: "Sign in · Bookynotes" };
 
 /**
  * `searchParams` is a promise in Next 16, because the page can begin rendering

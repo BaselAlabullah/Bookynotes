@@ -8,6 +8,7 @@ import { PageGrid } from "@/features/pages/components/page-grid";
 import { PageUploader } from "@/features/pages/components/page-uploader";
 import { listPagesForBook } from "@/features/pages/pages.repository";
 import { signPageImages } from "@/features/pages/pages.images";
+import { getPageDeletionImpacts } from "@/features/pages/pages.service";
 
 /**
  * One book: its pages, and the uploader for adding another.
@@ -19,11 +20,14 @@ import { signPageImages } from "@/features/pages/pages.images";
  */
 export default async function BookPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ bookId: string }>;
+  searchParams: Promise<{ cleanup?: string }>;
 }) {
   const user = await requireUser();
   const { bookId } = await params;
+  const { cleanup } = await searchParams;
 
   // Independent of each other: both need only the user and the book id.
   const resolvedBookId = asBookId(bookId);
@@ -40,7 +44,13 @@ export default async function BookPage({
   // One request for every thumbnail on the page, and thumbnails rather than
   // the originals. See features/pages/pages.images.ts for the measurements
   // that made both of those necessary.
-  const { thumbnails: previewUrls } = await signPageImages(pages);
+  const [{ thumbnails: previewUrls }, annotationCounts] = await Promise.all([
+    signPageImages(pages),
+    getPageDeletionImpacts(
+      user.id,
+      pages.map((page) => page.id),
+    ),
+  ]);
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-8">
@@ -50,9 +60,15 @@ export default async function BookPage({
         <h1 className="mt-1 max-w-[24ch] font-serif text-4xl leading-tight tracking-tight">{book.title}</h1>
       </header>
 
+      {cleanup === "needed" ? (
+        <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">
+          The page was deleted, but some stored files still need cleanup. Run the orphan sweep.
+        </p>
+      ) : null}
+
       <PageUploader bookId={book.id} />
 
-      <PageGrid bookId={book.id} pages={pages} previewUrls={previewUrls} />
+      <PageGrid bookId={book.id} pages={pages} previewUrls={previewUrls} annotationCounts={annotationCounts} />
     </main>
   );
 }

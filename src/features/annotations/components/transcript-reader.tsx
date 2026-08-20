@@ -11,6 +11,7 @@ import {
   type Annotation,
   type TextAnnotation,
 } from "../annotations.types";
+import { DeleteAnnotationButton } from "./delete-annotation-button";
 
 type TranscriptReaderProps = {
   pageId: PageId;
@@ -91,6 +92,9 @@ export function TranscriptReader({
 
   const paragraphs = splitIntoParagraphs(transcript);
   const textAnnotations = annotations.filter(isTextAnnotation);
+  const selectedAnnotation = textAnnotations.find(
+    (annotation) => annotation.id === selectedId,
+  );
 
   function captureSelection() {
     const selection = window.getSelection();
@@ -188,6 +192,18 @@ export function TranscriptReader({
           </p>
         ))}
       </div>
+
+      {selectedAnnotation ? (
+        <aside className="mx-auto flex w-full max-w-[62ch] items-start justify-between gap-5 border-t border-rule pt-4">
+          <div>
+            <p className="font-serif text-sm">“{selectedAnnotation.quotedText}”</p>
+            {selectedAnnotation.userComment ? (
+              <p className="mt-2 text-sm text-ink-muted">{selectedAnnotation.userComment}</p>
+            ) : null}
+          </div>
+          <DeleteAnnotationButton id={selectedAnnotation.id} />
+        </aside>
+      ) : null}
 
       {draft ? (
         <div className="mx-auto flex w-full max-w-[62ch] flex-col gap-3 border border-accent/40 p-4">

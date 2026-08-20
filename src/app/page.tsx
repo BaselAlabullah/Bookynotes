@@ -9,7 +9,7 @@ export default async function HomePage() {
     <main className="mx-auto flex min-h-dvh w-full max-w-[96rem] flex-col px-5 sm:px-8">
       <header className="flex h-20 items-center justify-between border-b border-ink">
         <p className="text-xs font-semibold uppercase tracking-[0.22em]">
-          Marginalia
+          Bookynotes
         </p>
         <p className="hidden text-xs uppercase tracking-[0.14em] text-ink-muted sm:block">
           Notes for books made of paper

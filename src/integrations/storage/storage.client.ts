@@ -182,9 +182,20 @@ export async function uploadObject(
 
 /** Remove an object. Used when a page row is deleted, and to sweep orphans. */
 export async function removeObject(storageKey: string): Promise<void> {
-  const { error } = await storage.remove([storageKey]);
+  return removeObjects([storageKey]);
+}
+
+/** Remove several related objects in one storage request. */
+export async function removeObjects(storageKeys: string[]): Promise<void> {
+  const unique = [...new Set(storageKeys.filter(Boolean))];
+
+  if (unique.length === 0) {
+    return;
+  }
+
+  const { error } = await storage.remove(unique);
 
   if (error) {
-    throw new StorageError("Could not delete the file.", { cause: error });
+    throw new StorageError("Could not delete stored files.", { cause: error });
   }
 }

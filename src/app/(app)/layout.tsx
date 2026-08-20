@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { requireUser } from "@/features/auth/auth.session";
 import { findProfile } from "@/features/auth/profiles.repository";
 import { SignOutButton } from "@/features/auth/components/sign-out-button";
-import { AppShortcuts } from "@/components/ui/app-shortcuts";
 
 /**
  * Everything inside the (app) route group requires a session.
@@ -30,7 +29,7 @@ export default async function AppLayout({
       <header className="app-header flex min-h-20 flex-wrap items-center gap-x-6 gap-y-3 border-b border-ink py-3">
         <div className="flex items-baseline gap-5">
           <Link href="/library" className="text-xs font-semibold uppercase tracking-[0.22em]">
-            Marginalia
+            Bookynotes
           </Link>
           <span aria-hidden className="hidden h-4 border-l border-rule sm:block" />
           <Link href="/library" className="hidden text-xs text-ink-muted hover:text-ink sm:block">
@@ -45,14 +44,13 @@ export default async function AppLayout({
               <circle cx="8.5" cy="8.5" r="5.5" />
               <path d="m12.5 12.5 4 4" />
             </svg>
-            <input id="global-search" name="q" type="search" placeholder="Search your marginalia" className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm outline-none" />
+            <input id="global-search" name="q" type="search" placeholder="Search your notes" className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm outline-none" />
             <kbd className="text-[10px] text-ink-muted">/</kbd>
           </div>
         </form>
 
         <div className="ml-auto flex items-center gap-3 sm:ml-0">
           <span className="hidden max-w-44 truncate text-xs text-ink-muted lg:block">{profile?.username ?? user.email}</span>
-          <AppShortcuts />
           <SignOutButton />
         </div>
       </header>

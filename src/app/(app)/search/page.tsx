@@ -11,7 +11,7 @@ import {
 } from "@/features/search/search.repository";
 import { searchQuerySchema } from "@/features/search/search.schema";
 
-export const metadata: Metadata = { title: "Search · Marginalia" };
+export const metadata: Metadata = { title: "Search · Bookynotes" };
 
 /**
  * Search across every annotation the user owns.

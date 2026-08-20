@@ -2114,3 +2114,72 @@ transcript, an empty range, and a page with no transcript at all — each with i
 own status rather than a generic failure.
 
 The database refused four malformed rows independently of the application.
+
+---
+
+## 0081 — Delete the row before deleting its objects
+
+**Problem.** Pages and books own objects in storage as well as rows in the
+database. A partial failure can leave either visible data with missing images or
+unreferenced objects.
+
+**Decision.** Collect every referenced storage key, delete the database row
+inside the repository boundary, and only then remove the collected objects.
+Page and book cascades remove their annotations through foreign keys. This
+supersedes the object-first order described in 0030.
+
+**Why.** A storage failure now leaves an invisible orphan that can be swept
+later, rather than a visible page or book whose image has already disappeared.
+The UI reports incomplete cleanup after the authoritative row deletion.
+
+---
+
+## 0082 — Destructive scope is visible before page and book deletion
+
+An annotation is a small, direct action and is deleted without a confirmation
+dialog. A page confirmation includes its annotation count. A book confirmation
+includes both its page count and total annotation count. The counts are scoped
+to the signed-in user through the repositories, just like the mutations.
+
+These are permanent deletes. Soft deletion would add filtering and retention
+states throughout a small personal library without providing recovery yet; the
+database cascades already express the ownership model cleanly.
+
+---
+
+## 0083 — The product is Bookynotes
+
+The product name, package name, user-agent strings, local launcher and current
+documentation use **Bookynotes** / `bookynotes`. Historical entries in this
+decision log retain the names that were true when those decisions were made.
+The reserved product username changes with the product so current source and
+configuration contain no stale identifier.
+
+---
+
+## 0084 — Orphan cleanup is explicit and dry-run first
+
+`npm run sweep:orphans` compares objects in the page-image bucket with every
+page and cover key still referenced by the database. It prints orphan keys but
+does not mutate storage. Passing `-- --delete` opts into batched removal.
+
+This is the repair path for row-first deletions whose storage cleanup was
+interrupted. Keeping deletion opt-in makes the maintenance command safe to
+inspect before it changes production storage.
+
+---
+
+## 0085 — Expired image credentials renew at the image boundary
+
+**Problem.** A client-side route cache can outlive the signed storage URLs
+embedded in its server-rendered payload. Navigation then displays blank covers
+and pages until a full reload obtains fresh credentials.
+
+**Decision.** When a private image fails, it asks an authenticated route for a
+fresh signed URL for its user-owned storage key, then retries with short,
+increasing delays. The route never signs a key outside the current user's
+prefix, returns no-store responses, and the image stops after four attempts.
+
+**Why.** Re-signing the failed resource fixes the expired credential directly;
+replaying the old URL or refreshing the whole page does not. The fixed limit
+preserves a real missing-image failure instead of polling indefinitely.

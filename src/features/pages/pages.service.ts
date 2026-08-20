@@ -1,5 +1,6 @@
 import { isUniqueViolation } from "@/db/errors";
-import type { UserId } from "@/db/ids";
+import type { PageId, UserId } from "@/db/ids";
+import { countAnnotationsForPages } from "@/features/annotations/annotations.repository";
 import { findBook } from "@/features/books/books.repository";
 import {
   isPageProcessorConfigured,
@@ -10,11 +11,12 @@ import {
   createSignedUpload,
   objectExists,
   removeObject,
+  removeObjects,
   uploadObject,
 } from "@/integrations/storage/storage.client";
 import type { SignedUpload } from "@/integrations/storage/storage.types";
 
-import { insertPage } from "./pages.repository";
+import { deletePage, findPage, insertPage } from "./pages.repository";
 import type { CompleteUploadInput, UploadTargetInput } from "./pages.schema";
 import { buildStorageKey, isStorageKeyOwnedBy } from "./pages.storage-key";
 import { flattenedKeyFor } from "./pages.storage-key";
@@ -254,5 +256,45 @@ async function tryBuildThumbnail(
     return thumbnailKey;
   } catch {
     return null;
+  }
+}
+
+export async function getPageDeletionImpacts(
+  userId: UserId,
+  pageIds: PageId[],
+): Promise<Map<PageId, number>> {
+  return countAnnotationsForPages(userId, pageIds);
+}
+
+export type DeletePageResult =
+  | { status: "not-found" }
+  | {
+      status: "deleted";
+      bookId: Page["bookId"];
+      cleanupIncomplete: boolean;
+    };
+
+/** Collect keys, delete the row and its annotations, then clean storage. */
+export async function deletePageAndObjects(
+  userId: UserId,
+  pageId: PageId,
+): Promise<DeletePageResult> {
+  const page = await findPage(userId, pageId);
+
+  if (!page) return { status: "not-found" };
+
+  const keys = [
+    page.storageKey,
+    page.thumbnailStorageKey,
+    page.originalStorageKey,
+  ].filter((key): key is string => key !== null);
+
+  if (!(await deletePage(userId, page.id))) return { status: "not-found" };
+
+  try {
+    await removeObjects(keys);
+    return { status: "deleted", bookId: page.bookId, cleanupIncomplete: false };
+  } catch {
+    return { status: "deleted", bookId: page.bookId, cleanupIncomplete: true };
   }
 }

@@ -1,5 +1,5 @@
 {
-  "name": "marginalia",
+  "name": "bookynotes",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -15,7 +15,8 @@
     "backfill:covers": "node scripts/backfill-covers.mjs",
     "username": "node scripts/set-username.mjs",
     "pages": "node scripts/pages.mjs",
-    "test:offsets": "node --experimental-strip-types scripts/test-offsets.mjs"
+    "test:offsets": "node --experimental-strip-types scripts/test-offsets.mjs",
+    "sweep:orphans": "node scripts/sweep-orphans.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.4",

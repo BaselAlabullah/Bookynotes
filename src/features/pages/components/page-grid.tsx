@@ -1,14 +1,17 @@
 import Link from "next/link";
 
+import { ResilientImage } from "@/components/ui/resilient-image";
 import type { BookId } from "@/db/ids";
 
 import type { Page } from "../pages.types";
+import { DeletePageButton } from "./delete-page-button";
 
 type PageGridProps = {
   bookId: BookId;
   pages: Page[];
   /** Signed read URL per page id. Signed by the server, expires in minutes. */
   previewUrls: Map<string, string>;
+  annotationCounts: Map<Page["id"], number>;
 };
 
 /**
@@ -18,7 +21,7 @@ type PageGridProps = {
  * component generated for this render. They stop working after a few minutes,
  * which is fine: the next render signs new ones.
  */
-export function PageGrid({ bookId, pages, previewUrls }: PageGridProps) {
+export function PageGrid({ bookId, pages, previewUrls, annotationCounts }: PageGridProps) {
   if (pages.length === 0) {
     return (
       <p className="border-y border-rule py-8 text-sm text-ink-muted">No pages yet. Add a photograph above; it will become the page you can mark and annotate.</p>
@@ -37,9 +40,9 @@ export function PageGrid({ bookId, pages, previewUrls }: PageGridProps) {
               className="group flex flex-col gap-2"
             >
               {previewUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <ResilientImage
                   src={previewUrl}
+                  storageKey={page.thumbnailStorageKey ?? page.storageKey}
                   alt={`Page ${page.pageNumber}`}
                   className="w-full border border-rule object-cover shadow-[3px_4px_0_var(--color-rule)] transition-transform group-hover:-translate-y-0.5"
                   // The intrinsic size is known, so the browser can reserve the
@@ -60,6 +63,13 @@ export function PageGrid({ bookId, pages, previewUrls }: PageGridProps) {
                 Page {page.pageNumber}
               </span>
             </Link>
+            <div className="mt-1">
+              <DeletePageButton
+                pageId={page.id}
+                pageNumber={page.pageNumber}
+                annotationCount={annotationCounts.get(page.id) ?? 0}
+              />
+            </div>
           </li>
         );
       })}

@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { asBookId } from "@/db/ids";
+import { asBookId, asPageId } from "@/db/ids";
+
+export const deletePageSchema = z.object({
+  pageId: z.uuid().transform(asPageId),
+});
 
 import { ACCEPTED_CONTENT_TYPES } from "./pages.storage-key";
 

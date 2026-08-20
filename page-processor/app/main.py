@@ -22,7 +22,7 @@ from .config import API_KEY, MAX_UPLOAD_BYTES, OUTPUT_QUALITY
 from .rectify import InvalidCorners, rectify, rectify_with_corners
 
 app = FastAPI(
-    title="Marginalia page-processor",
+    title="Bookynotes page-processor",
     description="Flattens and cleans photographs of book pages.",
     version="0.1.0",
 )

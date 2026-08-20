@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { requireUser } from "@/features/auth/auth.session";
 
@@ -8,8 +9,10 @@ import { storeBookCover } from "./books.cover";
 import { createBook, setBookCoverStorageKey } from "./books.repository";
 import {
   addBookInputSchema,
+  deleteBookSchema,
   type AddBookState,
 } from "./books.schema";
+import { deleteBookAndObjects } from "./books.service";
 
 /**
  * Add a book to the signed-in user's library.
@@ -72,4 +75,20 @@ export async function addBookAction(
   revalidatePath("/library");
 
   return { error: null, addedTitle: parsed.data.title };
+}
+
+export async function deleteBookAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const parsed = deleteBookSchema.safeParse({ bookId: formData.get("bookId") });
+
+  if (!parsed.success) redirect("/library");
+
+  const result = await deleteBookAndObjects(user.id, parsed.data.bookId);
+  revalidatePath("/library");
+
+  redirect(
+    result.status === "deleted" && result.cleanupIncomplete
+      ? "/library?cleanup=needed"
+      : "/library",
+  );
 }

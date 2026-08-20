@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { ResilientImage } from "@/components/ui/resilient-image";
 import type { BookId, PageId } from "@/db/ids";
 
 import type { Page } from "../pages.types";
@@ -34,9 +35,9 @@ export function PageFilmstrip({
                 {previewUrl ? (
                   // Private, short-lived storage URL; next/image would spend
                   // metered optimization quota for a tiny thumbnail.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <ResilientImage
                     src={previewUrl}
+                    storageKey={page.thumbnailStorageKey ?? page.storageKey}
                     alt=""
                     width={page.imageWidth}
                     height={page.imageHeight}

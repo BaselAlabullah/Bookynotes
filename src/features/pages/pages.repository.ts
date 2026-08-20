@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import type { BookId, PageId, UserId } from "@/db/ids";
@@ -36,6 +36,19 @@ export async function listPagesForBook(
     .select()
     .from(pages)
     .where(and(eq(pages.bookId, bookId), eq(pages.userId, userId)))
+    .orderBy(asc(pages.pageNumber));
+}
+
+export async function listPagesForBooks(
+  userId: UserId,
+  bookIds: BookId[],
+): Promise<Page[]> {
+  if (bookIds.length === 0) return [];
+
+  return db
+    .select()
+    .from(pages)
+    .where(and(eq(pages.userId, userId), inArray(pages.bookId, bookIds)))
     .orderBy(asc(pages.pageNumber));
 }
 

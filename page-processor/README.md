@@ -75,7 +75,7 @@ outside 45–135 degrees. Failing any of those returns the original with a
 confidence of 0, which the caller treats as a perfectly normal outcome.
 
 It deliberately does **not** binarise. Thresholding to pure black and white is
-the classic scanner look and it throws away pencil marginalia, printed
+the classic scanner look and it throws away pencil annotations, printed
 photographs and the anti-aliasing that makes small type readable — and a vision
 model reads the result worse, not better.
 

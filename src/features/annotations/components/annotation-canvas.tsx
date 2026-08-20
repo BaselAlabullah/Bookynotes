@@ -2,6 +2,8 @@
 
 import { useRef, useState } from "react";
 
+import { ResilientImage } from "@/components/ui/resilient-image";
+
 import {
   isRegionAnnotation,
   type Annotation,
@@ -10,6 +12,7 @@ import {
 
 type AnnotationCanvasProps = {
   imageUrl: string;
+  imageStorageKey: string;
   imageWidth: number;
   imageHeight: number;
   /** 1 = fit to column. Scrolling the container is how panning happens. */
@@ -79,6 +82,7 @@ const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
  */
 export function AnnotationCanvas({
   imageUrl,
+  imageStorageKey,
   imageWidth,
   imageHeight,
   zoom,
@@ -197,9 +201,9 @@ export function AnnotationCanvas({
           maxWidth: heightLimitedWidth,
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <ResilientImage
           src={imageUrl}
+          storageKey={imageStorageKey}
           alt="Page photograph"
           width={imageWidth}
           height={imageHeight}

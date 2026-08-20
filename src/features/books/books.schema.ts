@@ -1,4 +1,9 @@
 import { z } from "zod";
+import { asBookId } from "@/db/ids";
+
+export const deleteBookSchema = z.object({
+  bookId: z.uuid().transform(asBookId),
+});
 
 /**
  * Validation for anything crossing into the books feature from outside.

@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { asPageId } from "@/db/ids";
+import { asAnnotationId, asPageId } from "@/db/ids";
+
+export const deleteAnnotationSchema = z.object({
+  annotationId: z.uuid().transform(asAnnotationId),
+});
 
 /**
  * A rectangle expressed as fractions of the page image's intrinsic size.

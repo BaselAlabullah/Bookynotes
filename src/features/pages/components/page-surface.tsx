@@ -11,6 +11,7 @@ import { PageTranscript } from "./page-transcript";
 type PageSurfaceProps = {
   pageId: PageId;
   imageUrl: string;
+  imageStorageKey: string;
   imageWidth: number;
   imageHeight: number;
   annotations: Annotation[];

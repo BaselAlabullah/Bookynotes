@@ -1,4 +1,4 @@
-# Marginalia
+# Bookynotes
 
 Annotation and retrieval for physical books.
 

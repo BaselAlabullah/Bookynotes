@@ -4,6 +4,8 @@ import type { BookId } from "@/db/ids";
 
 import type { Book } from "../books.types";
 import { BookCover } from "./book-cover";
+import type { BookDeletionImpact } from "../books.service";
+import { DeleteBookButton } from "./delete-book-button";
 
 /**
  * The user's library. A server component: it renders data the page already
@@ -13,10 +15,12 @@ import { BookCover } from "./book-cover";
 export function LibraryList({
   books,
   coverUrls,
+  deletionImpacts,
 }: {
   books: Book[];
   /** Signed URLs for our own stored covers, keyed by book id. */
   coverUrls: Map<BookId, string>;
+  deletionImpacts: Map<BookId, BookDeletionImpact>;
 }) {
   if (books.length === 0) {
     return (
@@ -45,6 +49,7 @@ export function LibraryList({
               // Our copy first; Open Library's URL only for books added before
               // covers were stored locally.
               url={coverUrls.get(book.id) ?? book.coverUrl}
+              storageKey={book.coverStorageKey}
               title={book.title}
               eager={index < 4}
             />
@@ -60,6 +65,18 @@ export function LibraryList({
               ) : null}
             </div>
           </Link>
+          <div className="pb-4 pl-[108px]">
+            <DeleteBookButton
+              bookId={book.id}
+              title={book.title}
+              impact={
+                deletionImpacts.get(book.id) ?? {
+                  pageCount: 0,
+                  annotationCount: 0,
+                }
+              }
+            />
+          </div>
         </li>
       ))}
     </ul>

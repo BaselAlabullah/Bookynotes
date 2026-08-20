@@ -94,6 +94,7 @@ export default async function PageView({
         <PageSurface
           pageId={page.id}
           imageUrl={imageUrl}
+          imageStorageKey={page.storageKey}
           imageWidth={page.imageWidth}
           imageHeight={page.imageHeight}
           annotations={annotations}

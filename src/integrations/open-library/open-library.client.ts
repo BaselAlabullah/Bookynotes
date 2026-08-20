@@ -53,7 +53,7 @@ export async function searchBooks(query: string): Promise<BookSearchResult[]> {
       headers: {
         // Open Library asks that clients identify themselves so they can
         // contact you rather than silently rate limit you.
-        "User-Agent": "Marginalia/0.1 (github.com/marginalia)",
+        "User-Agent": "bookynotes/0.1 (github.com/BaselAlabullah/Bookynotes)",
       },
     });
   } catch (cause) {

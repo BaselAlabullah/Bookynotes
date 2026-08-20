@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { signUpAction } from "@/features/auth/auth.actions";
 import { CredentialsForm } from "@/features/auth/components/credentials-form";
 
-export const metadata: Metadata = { title: "Sign up · Marginalia" };
+export const metadata: Metadata = { title: "Sign up · Bookynotes" };
 
 export default function SignUpPage() {
   return (

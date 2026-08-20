@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import type { AnnotationId, PageId, UserId } from "@/db/ids";
@@ -206,4 +206,21 @@ export async function deleteAnnotation(
     .returning({ id: annotations.id });
 
   return deleted.length > 0;
+}
+
+export async function countAnnotationsForPages(
+  userId: UserId,
+  pageIds: PageId[],
+): Promise<Map<PageId, number>> {
+  if (pageIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({ pageId: annotations.pageId, count: sql<number>`count(*)::int` })
+    .from(annotations)
+    .where(
+      and(eq(annotations.userId, userId), inArray(annotations.pageId, pageIds)),
+    )
+    .groupBy(annotations.pageId);
+
+  return new Map(rows.map((row) => [row.pageId, row.count]));
 }

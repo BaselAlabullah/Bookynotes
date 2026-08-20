@@ -1,9 +1,12 @@
+import { ResilientImage } from "@/components/ui/resilient-image";
+
 type BookCoverProps = {
   /**
    * A signed URL for our own stored copy, when there is one, otherwise Open
    * Library's. See `books.cover.ts` for why we keep a copy at all.
    */
   url: string | null;
+  storageKey?: string | null;
   title: string;
   /**
    * Set for the covers visible without scrolling.
@@ -31,7 +34,12 @@ type BookCoverProps = {
  * the gap. That was the actual complaint, and it is a rendering artefact rather
  * than a missing image.
  */
-export function BookCover({ url, title, eager = false }: BookCoverProps) {
+export function BookCover({
+  url,
+  storageKey,
+  title,
+  eager = false,
+}: BookCoverProps) {
   if (!url) {
     return (
       <div
@@ -45,10 +53,9 @@ export function BookCover({ url, title, eager = false }: BookCoverProps) {
 
   return (
     <div className="h-[138px] w-[92px] shrink-0 bg-paper-deep shadow-[3px_4px_0_var(--color-rule)]">
-      {/* next/image is declined on purpose here; see the doc comment above. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <ResilientImage
         src={url}
+        storageKey={storageKey ?? undefined}
         alt={`Cover of ${title}`}
         width={92}
         height={138}

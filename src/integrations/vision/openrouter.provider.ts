@@ -124,7 +124,7 @@ async function callOpenRouter(
         // OpenRouter uses these to attribute traffic. On the free tier they are
         // also what stops your requests being treated as anonymous scraping.
         "HTTP-Referer": appUrl,
-        "X-Title": "Marginalia",
+        "X-Title": "Bookynotes",
       },
       signal: AbortSignal.timeout(TIMEOUT_MS),
       body: JSON.stringify({

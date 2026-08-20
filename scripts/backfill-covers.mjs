@@ -52,7 +52,9 @@ for (const book of pending) {
   try {
     const response = await fetch(book.cover_url, {
       signal: AbortSignal.timeout(15_000),
-      headers: { "User-Agent": "Marginalia/0.1 (github.com/marginalia)" },
+      headers: {
+        "User-Agent": "bookynotes/0.1 (github.com/BaselAlabullah/Bookynotes)",
+      },
     });
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

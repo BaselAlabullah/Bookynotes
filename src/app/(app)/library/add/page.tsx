@@ -4,7 +4,7 @@ import { requireUser } from "@/features/auth/auth.session";
 import { BookSearch } from "@/features/books/components/book-search";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 
-export const metadata: Metadata = { title: "Add a book · Marginalia" };
+export const metadata: Metadata = { title: "Add a book · Bookynotes" };
 
 export default async function AddBookPage() {
   // The search itself is authenticated by its route handler, but the page is

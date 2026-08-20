@@ -51,7 +51,9 @@ export async function storeBookCover(
   try {
     const response = await fetch(coverUrl, {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: { "User-Agent": "Marginalia/0.1 (github.com/marginalia)" },
+      headers: {
+        "User-Agent": "bookynotes/0.1 (github.com/BaselAlabullah/Bookynotes)",
+      },
     });
 
     if (!response.ok) {

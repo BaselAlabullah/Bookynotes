@@ -75,7 +75,7 @@ def clean(image: np.ndarray) -> np.ndarray:
 
     Note what this does *not* do: it does not binarise. Thresholding a page to
     pure black and white is the classic "scanner" look and it throws away
-    information — faint pencil marginalia, the grey of a photograph printed on
+    information — faint pencil annotations, the grey of a photograph printed on
     the page, the anti-aliasing that makes small type readable. A vision model
     reading the result does better with the greys intact, and so does a person.
     """

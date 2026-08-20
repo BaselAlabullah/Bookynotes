@@ -10,6 +10,8 @@ import {
   createTextAnnotationSchema,
   type CreateAnnotationResult,
 } from "./annotations.schema";
+import { deleteAnnotationSchema } from "./annotations.schema";
+import { deleteAnnotation } from "./annotations.repository";
 
 /**
  * Create an annotation.
@@ -110,4 +112,16 @@ export async function createTextAnnotationAction(
   revalidatePath("/books", "layout");
 
   return { error: null, createdId: result.annotation.id };
+}
+
+export async function deleteAnnotationAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const parsed = deleteAnnotationSchema.safeParse({
+    annotationId: formData.get("annotationId"),
+  });
+
+  if (!parsed.success) return;
+
+  await deleteAnnotation(user.id, parsed.data.annotationId);
+  revalidatePath("/books", "layout");
 }

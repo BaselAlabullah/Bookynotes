@@ -26,7 +26,7 @@ const RESERVED_USERNAMES = new Set([
   "admin", "administrator", "root", "system", "support", "help", "about",
   "api", "auth", "signin", "sign-in", "signup", "sign-up", "signout",
   "library", "books", "book", "pages", "page", "search", "annotations",
-  "settings", "account", "profile", "me", "new", "marginalia",
+  "settings", "account", "profile", "me", "new", "bookynotes",
 ]);
 
 /**
