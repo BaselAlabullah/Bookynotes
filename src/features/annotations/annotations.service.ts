@@ -1,8 +1,16 @@
 import type { UserId } from "@/db/ids";
 import { findPage } from "@/features/pages/pages.repository";
 
-import { insertAnnotation } from "./annotations.repository";
-import type { Annotation, NewAnnotation } from "./annotations.types";
+import {
+  insertAnnotation,
+  insertTextAnnotation,
+} from "./annotations.repository";
+import { contextAround, rangeStillMatches } from "./annotations.text";
+import type {
+  Annotation,
+  NewAnnotation,
+  NewTextAnnotation,
+} from "./annotations.types";
 
 /**
  * Create an annotation on a page the user owns.
@@ -26,4 +34,59 @@ export async function createAnnotation(
   }
 
   return insertAnnotation(userId, input);
+}
+
+export type CreateTextAnnotationResult =
+  | { status: "created"; annotation: Annotation }
+  /** The page is missing, or is not this user's. The same answer for both. */
+  | { status: "not-found" }
+  /** Nothing has been transcribed, so there is nothing to anchor to. */
+  | { status: "no-transcript" }
+  /** The offsets no longer cover the words that were selected. */
+  | { status: "stale-selection" };
+
+/**
+ * Create an annotation anchored to a range of the page's transcript.
+ *
+ * The ownership check is the same as for a region annotation. What is different
+ * is the validation *against the transcript itself*: the offsets and the quote
+ * are checked to still agree before anything is written.
+ *
+ * That check matters because the client sent all three. Offsets from a stale
+ * tab, or from a transcript that has since been re-read, would otherwise be
+ * stored as though they were current — and an annotation quietly pointing at
+ * the wrong words is worse than one that failed to save.
+ */
+export async function createTextAnnotation(
+  userId: UserId,
+  input: NewTextAnnotation,
+): Promise<CreateTextAnnotationResult> {
+  const page = await findPage(userId, input.pageId);
+
+  if (!page) {
+    return { status: "not-found" };
+  }
+
+  if (!page.transcript) {
+    return { status: "no-transcript" };
+  }
+
+  if (
+    !rangeStillMatches(
+      page.transcript,
+      input.textStart,
+      input.textEnd,
+      input.quotedText,
+    )
+  ) {
+    return { status: "stale-selection" };
+  }
+
+  const annotation = await insertTextAnnotation(
+    userId,
+    input,
+    contextAround(page.transcript, input.textStart, input.textEnd),
+  );
+
+  return { status: "created", annotation };
 }

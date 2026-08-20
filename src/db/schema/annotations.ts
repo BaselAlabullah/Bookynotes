@@ -31,6 +31,24 @@ export const enrichmentStatus = pgEnum("enrichment_status", [
 ]);
 
 /**
+ * What an annotation is attached to.
+ *
+ * 'region' — a rectangle on the photograph, in normalized coordinates. The
+ *   original anchor, and the only one that works on an image.
+ * 'text'   — a character range in the page's transcript. Survives reflow,
+ *   because reflowing text does not change which characters were chosen.
+ *
+ * Two anchors rather than one because the two surfaces genuinely differ: a
+ * photograph has geometry and a transcript has characters. A rectangle over
+ * reflowing text means nothing, and a character offset into a photograph means
+ * less.
+ */
+export const annotationAnchor = pgEnum("annotation_anchor", [
+  "region",
+  "text",
+]);
+
+/**
  * A normalized rectangle on a page, the user's note, and whatever the vision
  * model read inside that rectangle.
  *
@@ -49,12 +67,38 @@ export const annotations = pgTable(
       .$type<PageId>()
       .references(() => pages.id, { onDelete: "cascade" }),
 
-    /** Left edge, as a fraction of image width. */
-    rectX: doublePrecision("rect_x").notNull(),
-    /** Top edge, as a fraction of image height. */
-    rectY: doublePrecision("rect_y").notNull(),
-    rectWidth: doublePrecision("rect_width").notNull(),
-    rectHeight: doublePrecision("rect_height").notNull(),
+    /**
+     * Which surface this is attached to. Everything below is nullable because
+     * of it, and the check constraint at the bottom of this table is what stops
+     * that nullability from meaning "anything goes".
+     */
+    anchor: annotationAnchor("anchor").notNull().default("region"),
+
+    /** Left edge, as a fraction of image width. Null for a text anchor. */
+    rectX: doublePrecision("rect_x"),
+    /** Top edge, as a fraction of image height. Null for a text anchor. */
+    rectY: doublePrecision("rect_y"),
+    rectWidth: doublePrecision("rect_width"),
+    rectHeight: doublePrecision("rect_height"),
+
+    /**
+     * Character offsets into the page transcript, half-open: [start, end).
+     * Null for a region anchor.
+     */
+    textStart: integer("text_start"),
+    textEnd: integer("text_end"),
+
+    /**
+     * The selected text, copied at the moment it was selected.
+     *
+     * Redundant with the offsets, deliberately. Offsets alone are brittle: if a
+     * page is transcribed again and the model reads one word differently, every
+     * offset after it shifts and each annotation silently points at the wrong
+     * words. The quote is what makes that detectable — and it is what gets
+     * displayed, so an annotation still reads correctly even if its offsets
+     * have gone stale.
+     */
+    quotedText: text("quoted_text"),
 
     /** The user's own note. Empty string, not null, when they only marked a
      * passage without saying anything about it. */
@@ -122,5 +166,31 @@ export const annotations = pgTable(
       sql`${table.rectHeight} > 0 AND ${table.rectHeight} <= 1`,
     ),
     check("annotations_retry_count_positive", sql`${table.retryCount} >= 0`),
+
+    /**
+     * Exactly one anchor, fully populated.
+     *
+     * Making the rectangle nullable to accommodate text annotations opens the
+     * door to a row that is neither — no rectangle, no range, attached to
+     * nothing. This closes it in the database rather than hoping every code
+     * path remembers, which is the same argument as every other constraint in
+     * this schema.
+     */
+    check(
+      "annotations_exactly_one_anchor",
+      sql`(
+        ${table.anchor} = 'region'
+        AND ${table.rectX} IS NOT NULL AND ${table.rectY} IS NOT NULL
+        AND ${table.rectWidth} IS NOT NULL AND ${table.rectHeight} IS NOT NULL
+        AND ${table.textStart} IS NULL AND ${table.textEnd} IS NULL
+      ) OR (
+        ${table.anchor} = 'text'
+        AND ${table.textStart} IS NOT NULL AND ${table.textEnd} IS NOT NULL
+        AND ${table.textEnd} > ${table.textStart}
+        AND ${table.quotedText} IS NOT NULL
+        AND ${table.rectX} IS NULL AND ${table.rectY} IS NULL
+        AND ${table.rectWidth} IS NULL AND ${table.rectHeight} IS NULL
+      )`,
+    ),
   ],
 ).enableRLS();

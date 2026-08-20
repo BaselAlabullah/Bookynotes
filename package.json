@@ -14,7 +14,8 @@
     "backfill:thumbnails": "node scripts/backfill-thumbnails.mjs",
     "backfill:covers": "node scripts/backfill-covers.mjs",
     "username": "node scripts/set-username.mjs",
-    "pages": "node scripts/pages.mjs"
+    "pages": "node scripts/pages.mjs",
+    "test:offsets": "node --experimental-strip-types scripts/test-offsets.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.4",

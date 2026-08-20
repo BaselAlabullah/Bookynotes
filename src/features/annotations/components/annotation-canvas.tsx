@@ -2,7 +2,11 @@
 
 import { useRef, useState } from "react";
 
-import type { Annotation, NormalizedRect } from "../annotations.types";
+import {
+  isRegionAnnotation,
+  type Annotation,
+  type NormalizedRect,
+} from "../annotations.types";
 
 type AnnotationCanvasProps = {
   imageUrl: string;
@@ -217,7 +221,10 @@ export function AnnotationCanvas({
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
         >
-          {annotations.map((annotation) => (
+          {/* Only region anchors belong on the photograph. A text annotation
+              is anchored to characters in the transcript and has no rectangle
+              to draw. */}
+          {annotations.filter(isRegionAnnotation).map((annotation) => (
             <rect
               key={annotation.id}
               x={annotation.rectX}
@@ -269,7 +276,7 @@ export function AnnotationCanvas({
           ) : null}
         </svg>
 
-        {annotations.map((annotation, index) => (
+        {annotations.filter(isRegionAnnotation).map((annotation, index) => (
           <span
             key={annotation.id}
             aria-hidden

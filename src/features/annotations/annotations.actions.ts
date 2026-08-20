@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 
 import { requireUser } from "@/features/auth/auth.session";
 
-import { createAnnotation } from "./annotations.service";
+import { createAnnotation, createTextAnnotation } from "./annotations.service";
 import {
   createAnnotationSchema,
+  createTextAnnotationSchema,
   type CreateAnnotationResult,
 } from "./annotations.schema";
 
@@ -57,4 +58,56 @@ export async function createAnnotationAction(
   revalidatePath("/books", "layout");
 
   return { error: null, createdId: annotation.id };
+}
+
+/**
+ * Create an annotation anchored to a selection in the page transcript.
+ *
+ * Takes a typed object rather than FormData for the same reason the region
+ * version does (DECISIONS 0034): the input is a selection made with a pointer,
+ * so there is no form to progressively enhance from.
+ *
+ * Unlike the region version, nothing is left pending. The reader chose the
+ * words, so the passage is known at insert time and no vision call is needed —
+ * which on a free tier of twenty calls a day is the difference between a
+ * feature you use and one you ration.
+ */
+export async function createTextAnnotationAction(
+  input: unknown,
+): Promise<CreateAnnotationResult> {
+  const user = await requireUser();
+
+  const parsed = createTextAnnotationSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "That selection is not valid.",
+      createdId: null,
+    };
+  }
+
+  const result = await createTextAnnotation(user.id, parsed.data);
+
+  if (result.status === "not-found") {
+    return { error: "That page could not be found.", createdId: null };
+  }
+
+  if (result.status === "no-transcript") {
+    return {
+      error: "This page has not been read yet, so there is nothing to select.",
+      createdId: null,
+    };
+  }
+
+  if (result.status === "stale-selection") {
+    return {
+      error:
+        "That selection no longer matches the page text. Reload and try again.",
+      createdId: null,
+    };
+  }
+
+  revalidatePath("/books", "layout");
+
+  return { error: null, createdId: result.annotation.id };
 }

@@ -11,4 +11,4 @@
 export { profiles } from "./profiles";
 export { books } from "./books";
 export { pages } from "./pages";
-export { annotations, enrichmentStatus } from "./annotations";
+export { annotations, annotationAnchor, enrichmentStatus } from "./annotations";

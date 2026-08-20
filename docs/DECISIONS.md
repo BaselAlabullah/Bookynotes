@@ -1976,3 +1976,141 @@ grants a fresh allowance immediately.
 
 Verified against a genuinely exhausted quota rather than a simulated one: the
 `PerDay` id was present, the branch fired, and the message was the second one.
+
+---
+
+## 0076 — Two anchors, one table, one constraint
+
+**Problem.** Annotations on the photograph are rectangles in normalized
+coordinates. Annotations on the transcript cannot be: the text reflows, so a
+rectangle over it means nothing the moment the window changes width.
+
+**Options.** (a) A second table for text annotations. (b) One table, with a
+discriminator and both sets of columns nullable.
+
+**Decision.** (b). An `anchor` enum of `'region' | 'text'`, the rectangle
+columns made nullable, character offsets and a quote added.
+
+**Why.** They are the same thing — a note a reader attached to part of a page —
+and everything downstream treats them identically: one list, one search index,
+one delete path. A second table would have meant duplicating all of that to
+express a difference that only matters when rendering.
+
+The cost of nullable columns is a row that is *neither*: no rectangle, no range,
+attached to nothing. That is closed in the database rather than by hoping every
+code path remembers:
+
+```
+CHECK (
+  (anchor = 'region' AND rect_x IS NOT NULL AND ... AND text_start IS NULL)
+  OR
+  (anchor = 'text'   AND text_start IS NOT NULL AND text_end > text_start
+                     AND quoted_text IS NOT NULL AND rect_x IS NULL)
+)
+```
+
+Verified by trying to break it: a row attached to nothing, a text anchor
+carrying a rectangle as well, an end before its start, and a region anchor with
+no rectangle were all rejected with `23514`.
+
+`isRegionAnnotation` and `isTextAnnotation` narrow that guarantee back into the
+type system, so the canvas can use the four numbers without apologising to the
+compiler for a database rule it cannot see.
+
+---
+
+## 0077 — A text annotation needs no model at all
+
+**Problem.** A region annotation is born `pending` and waits for a vision call
+to discover what it covers. Should a text annotation do the same?
+
+**Decision.** No. It is born `complete`, with `extracted_passage` set to the
+selected text and `extracted_context` sliced from the transcript around it.
+
+**Why.** The reader selected the words. Asking a model to read them back would
+spend a scarce daily quota — measured at twenty calls a day (0074) — to
+reproduce a string already in hand, and would introduce a pending state, a
+failure mode and a retry button for an operation that cannot fail.
+
+This is the quiet advantage of the text anchor, and it only became obvious once
+the quota was understood. Region annotations are rationed by the free tier; text
+annotations are not rationed at all.
+
+---
+
+## 0078 — The quote is stored alongside the offsets
+
+**Problem.** Offsets into a transcript are brittle. Re-read a page, have the
+model render one word differently, and every offset after it shifts — silently,
+because a shifted offset still points *somewhere*.
+
+**Decision.** Store `quoted_text` as well, captured at the moment of selection,
+and check it still matches before writing.
+
+**Why.** Redundant on purpose. The quote is what makes drift detectable, and it
+is what gets displayed — so an annotation still reads correctly even when its
+offsets have gone stale. `createTextAnnotation` refuses a selection whose quote
+no longer matches its range, which also covers the ordinary case of a stale
+browser tab.
+
+Three layers, each catching what it can see: Zod validates shape at the action,
+the service validates against the actual transcript, and the check constraint
+guarantees the row is coherent. Verified: a mismatched quote, a range beyond the
+end of the transcript and an empty range were each refused.
+
+The quote comes from `transcript.slice(start, end)`, not from
+`selection.toString()`. The browser inserts line breaks between block elements,
+so a selection spanning two paragraphs would not match the stored text and the
+server would reject a perfectly good selection.
+
+---
+
+## 0079 — Paragraph offsets, and the test that caught them
+
+Splitting a transcript for display is trivial. Splitting it *without losing
+where each paragraph started* is what text anchoring depends on, and the obvious
+implementation throws exactly that away:
+
+```
+transcript.split(/\n\s*\n/).map((p) => p.trim())
+```
+
+`splitIntoParagraphs` scans with `exec` instead and returns each paragraph with
+its absolute start, so a browser offset becomes a transcript offset by one
+addition. The same function runs in the browser and on the server — if the two
+disagreed about where a paragraph begins, every annotation would be wrong by the
+difference.
+
+**The first implementation was wrong**, and a unit test caught it. It assumed
+the separator between paragraphs was one character; a blank line is at least
+two, and more when it carries spaces. Every paragraph after the first was
+shifted, and nothing failed — the offsets simply pointed a few characters off.
+
+That is the failure mode worth paying a test for: not a crash, but a quiet
+mis-selection that would only ever be noticed by a reader wondering why their
+highlight covered the wrong words. `npm run test:offsets`.
+
+---
+
+## 0080 — Verifying text annotations
+
+Not a fork, a receipt. Through the real service, against a page with a stored
+transcript:
+
+```
+select "Midge confirmed with a curt nod" at [64, 95)
+
+anchor        text
+range         [64, 95)
+quote         "Midge confirmed with a curt nod"
+passage       "Midge confirmed with a curt nod"   (no model call)
+status        complete
+rectangle     null
+context       sliced from the transcript around it
+```
+
+Rejected: a quote that does not match its range, a range past the end of the
+transcript, an empty range, and a page with no transcript at all — each with its
+own status rather than a generic failure.
+
+The database refused four malformed rows independently of the application.

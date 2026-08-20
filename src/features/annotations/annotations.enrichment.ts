@@ -62,6 +62,13 @@ export async function enrichAnnotation(
     return { status: "cached", annotation };
   }
 
+  // A text annotation carries its own passage: the reader selected the words,
+  // so there is nothing for a model to read. Asking one anyway would spend a
+  // scarce daily quota to reproduce a string we already have.
+  if (annotation.anchor === "text") {
+    return { status: "cached", annotation };
+  }
+
   const page = await findPage(userId, annotation.pageId);
 
   if (!page) {
@@ -95,11 +102,13 @@ export async function enrichAnnotation(
 
     const pageImage = Buffer.from(await response.arrayBuffer());
 
+    // Non-null by the check constraint: a region anchor always has all four,
+    // and the branch above has already returned for anything else.
     const crop = await prepareCropForModel(pageImage, {
-      x: annotation.rectX,
-      y: annotation.rectY,
-      width: annotation.rectWidth,
-      height: annotation.rectHeight,
+      x: annotation.rectX ?? 0,
+      y: annotation.rectY ?? 0,
+      width: annotation.rectWidth ?? 1,
+      height: annotation.rectHeight ?? 1,
     });
 
     const result = await extractPassage(crop);

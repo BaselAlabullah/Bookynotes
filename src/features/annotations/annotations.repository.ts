@@ -4,7 +4,12 @@ import { db } from "@/db/client";
 import type { AnnotationId, PageId, UserId } from "@/db/ids";
 import { annotations } from "@/db/schema";
 
-import type { Annotation, EnrichmentResult, NewAnnotation } from "./annotations.types";
+import type {
+  Annotation,
+  EnrichmentResult,
+  NewAnnotation,
+  NewTextAnnotation,
+} from "./annotations.types";
 
 /**
  * Every query against the `annotations` table.
@@ -30,6 +35,44 @@ export async function insertAnnotation(
       // Status is not a parameter. An annotation is always born 'pending':
       // there is no code path that creates one already enriched, because the
       // write must never wait on the model.
+    })
+    .returning();
+
+  if (!created) {
+    throw new Error("Insert into annotations returned no row");
+  }
+
+  return created;
+}
+
+/**
+ * Create an annotation anchored to a range of the page transcript.
+ *
+ * Born `complete` rather than `pending`, and that is the point: the reader
+ * selected the words, so `extracted_passage` *is* the selection. There is
+ * nothing for a vision model to read, and on a free tier of twenty calls a day
+ * that difference is the difference between a feature you can use and one you
+ * ration.
+ */
+export async function insertTextAnnotation(
+  userId: UserId,
+  input: NewTextAnnotation,
+  /** Surrounding transcript, for context. Computed locally, not by a model. */
+  context: string,
+): Promise<Annotation> {
+  const [created] = await db
+    .insert(annotations)
+    .values({
+      userId,
+      pageId: input.pageId,
+      anchor: "text",
+      textStart: input.textStart,
+      textEnd: input.textEnd,
+      quotedText: input.quotedText,
+      userComment: input.userComment,
+      extractedPassage: input.quotedText,
+      extractedContext: context,
+      enrichmentStatus: "complete",
     })
     .returning();
 

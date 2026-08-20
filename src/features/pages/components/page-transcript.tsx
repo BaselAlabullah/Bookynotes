@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type { PageId } from "@/db/ids";
+import { TranscriptReader } from "@/features/annotations/components/transcript-reader";
+import type { Annotation } from "@/features/annotations/annotations.types";
 
 type PageTranscriptProps = {
   pageId: PageId;
@@ -14,6 +16,9 @@ type PageTranscriptProps = {
   pageNumber: number;
   /** The page number the model read off the page, if it found one. */
   printedPageNumber: string | null;
+  annotations: Annotation[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
 };
 
 /**
@@ -36,6 +41,9 @@ export function PageTranscript({
   error,
   pageNumber,
   printedPageNumber,
+  annotations,
+  selectedId,
+  onSelect,
 }: PageTranscriptProps) {
   const router = useRouter();
   const [isWorking, setIsWorking] = useState(false);
@@ -85,10 +93,11 @@ export function PageTranscript({
     printedPageNumber.trim() !== String(pageNumber);
 
   if (transcript) {
-    // Paragraphs are separated by blank lines; the printed line breaks inside a
-    // paragraph were deliberately not preserved, because this text reflows.
-    const paragraphs = transcript.split(/\n\s*\n/).filter((p) => p.trim());
-
+    // Splitting into paragraphs belongs to TranscriptReader, which needs each
+    // one's offset in the transcript as well as its text. Doing it here too
+    // would mean two implementations that must agree about where a paragraph
+    // begins, and every annotation would be wrong by the difference if they
+    // ever drifted.
     return (
       <div className="flex flex-col gap-5">
         {pageNumberDisagrees ? (
@@ -102,13 +111,13 @@ export function PageTranscript({
           </p>
         ) : null}
 
-        <article className="mx-auto flex max-w-[62ch] flex-col gap-4 font-serif text-[1.05rem] leading-[1.75]">
-          {paragraphs.map((paragraph, index) => (
-            <p key={index} className="whitespace-pre-wrap">
-              {paragraph.trim()}
-            </p>
-          ))}
-        </article>
+        <TranscriptReader
+          pageId={pageId}
+          transcript={transcript}
+          annotations={annotations}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
 
         <div className="flex flex-wrap items-center gap-3 border-t border-rule pt-3">
           <p className="mr-auto text-xs text-ink-muted">

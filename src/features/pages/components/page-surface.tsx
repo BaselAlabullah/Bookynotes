@@ -46,6 +46,7 @@ type View = "original" | "reading";
  * reflowing text means nothing.
  */
 export function PageSurface({
+  annotations,
   transcript,
   transcriptStatus,
   transcriptError,
@@ -54,6 +55,9 @@ export function PageSurface({
   ...annotatorProps
 }: PageSurfaceProps) {
   const [view, setView] = useState<View>("original");
+  // Selection is shared across both views, so clicking a note in one and
+  // switching to the other keeps the same annotation current.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   return (
     <div className="flex flex-col gap-4">
@@ -87,7 +91,7 @@ export function PageSurface({
       </div>
 
       {view === "original" ? (
-        <PageAnnotator {...annotatorProps} />
+        <PageAnnotator {...annotatorProps} annotations={annotations} />
       ) : (
         <PageTranscript
           pageId={annotatorProps.pageId}
@@ -96,6 +100,9 @@ export function PageSurface({
           error={transcriptError}
           pageNumber={pageNumber}
           printedPageNumber={transcriptPageNumber}
+          annotations={annotations}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
         />
       )}
     </div>

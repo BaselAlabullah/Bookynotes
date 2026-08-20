@@ -41,6 +41,35 @@ export const createAnnotationSchema = z.object({
 
 export type CreateAnnotationInput = z.infer<typeof createAnnotationSchema>;
 
+/**
+ * A selection in the page transcript.
+ *
+ * The offsets are what anchor it; the quote is what makes a stale anchor
+ * detectable and is what gets displayed. Both are required — see the check
+ * constraint on the table, which enforces the same thing one layer down.
+ */
+export const createTextAnnotationSchema = z
+  .object({
+    pageId: z.uuid().transform(asPageId),
+    /** Half-open character range into the transcript: [start, end). */
+    textStart: z.number().int().min(0),
+    textEnd: z.number().int().min(1),
+    quotedText: z
+      .string()
+      .min(1, "Select some text first.")
+      // A whole page is a few thousand characters; well past that and something
+      // has gone wrong with the selection rather than with the reader.
+      .max(10_000, "That selection is too long."),
+    userComment: z.string().trim().max(2000).default(""),
+  })
+  .refine((value) => value.textEnd > value.textStart, {
+    message: "That selection is empty.",
+  });
+
+export type CreateTextAnnotationInput = z.infer<
+  typeof createTextAnnotationSchema
+>;
+
 export type CreateAnnotationResult = {
   error: string | null;
   createdId: string | null;

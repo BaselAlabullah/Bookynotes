@@ -7,7 +7,11 @@ import type { PageId } from "@/db/ids";
 
 import { createAnnotationAction } from "../annotations.actions";
 import { enrichResponseSchema } from "../annotations.schema";
-import type { Annotation, NormalizedRect } from "../annotations.types";
+import {
+  isRegionAnnotation,
+  type Annotation,
+  type NormalizedRect,
+} from "../annotations.types";
 import { AnnotationCanvas } from "./annotation-canvas";
 
 type PageAnnotatorProps = {
@@ -64,11 +68,14 @@ export function PageAnnotator({
   const [enriching, setEnriching] = useState<ReadonlySet<string>>(new Set());
 
   const zoom = ZOOM_STEPS[zoomIndex] ?? 1;
+  // Only region anchors appear on the photograph, ordered down the page so the
+  // margin notes read in the order the eye meets them. Text annotations belong
+  // to the reading view and are listed there.
   const orderedAnnotations = useMemo(
     () =>
-      [...annotations].sort(
-        (a, b) => a.rectY - b.rectY || a.rectX - b.rectX,
-      ),
+      annotations
+        .filter(isRegionAnnotation)
+        .sort((a, b) => a.rectY - b.rectY || a.rectX - b.rectX),
     [annotations],
   );
 

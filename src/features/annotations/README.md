@@ -4,7 +4,8 @@ A normalized rectangle on a page, the user's note, and whatever the vision model
 reads inside that rectangle.
 
 ```
-annotations.types.ts        Annotation, NormalizedRect, EnrichmentResult
+annotations.types.ts        Annotation, NormalizedRect, and the two anchor guards
+annotations.text.ts         paragraph offsets and context, shared by browser and server
 annotations.schema.ts       zod bounds for the rectangle and the create input
 annotations.repository.ts   every query against the annotations table
 annotations.service.ts      createAnnotation, with the page ownership check
@@ -90,3 +91,32 @@ resolve. See DECISIONS 0039.
 The crop is computed against the dimensions `sharp` decodes, not the ones stored
 on the page row, so a browser that reported the wrong size still gets the right
 crop.
+
+## Two anchors
+
+An annotation attaches to one of two surfaces, and they need different anchors:
+
+| anchor | attached to | why |
+| --- | --- | --- |
+| `region` | the photograph | fractions of the image, so a pin lands correctly at any size |
+| `text` | the transcript | a character range, so it survives reflow |
+
+A rectangle over reflowing text means nothing the moment the window changes
+width, and a character offset into a photograph means less. One table holds
+both, with a check constraint guaranteeing exactly one anchor is populated —
+see DECISIONS 0076.
+
+**A text annotation costs no model call.** The reader selected the words, so the
+passage *is* the selection and the context is a slice of the transcript. It is
+born `complete`: no pending state, no retry, no quota. On a free tier of twenty
+calls a day that is the difference between a feature you use and one you ration.
+
+**The quote is stored beside the offsets**, deliberately redundant. Offsets
+drift if a page is transcribed again; the quote is what makes that detectable,
+and what gets displayed regardless. A selection whose quote no longer matches
+its range is refused rather than stored.
+
+`annotations.text.ts` does the offset arithmetic and runs in both the browser
+and the server — if the two disagreed about where a paragraph begins, every
+annotation would be wrong by the difference. It has a test, because its failure
+mode is silence rather than a crash: `npm run test:offsets`.
