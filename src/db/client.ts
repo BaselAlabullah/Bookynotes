@@ -16,8 +16,14 @@ import * as schema from "./schema";
  *   there on the next. Leaving this on produces intermittent
  *   "prepared statement does not exist" errors under concurrency, which is a
  *   miserable thing to debug.
- * - `max: 1` — a function instance handles one request at a time, so a pool of
- *   more than one connection just holds pooler slots open for nothing.
+ * - `max: 3` — a function instance handles one request at a time, so this is
+ *   not about concurrent *requests*. It is about concurrent *queries within*
+ *   one: a page that fetches its book and its page list at the same time gets
+ *   no benefit from `Promise.all` if both statements queue behind a single
+ *   connection. Measured, that was the difference between two round trips and
+ *   one — about 200ms per wave, on a database in Tokyo. Three is the widest
+ *   fan-out any page here has; the transaction pooler multiplexes, so idle
+ *   client connections are cheap.
  *
  * The client is cached on globalThis because Next's dev server re-evaluates
  * modules on every edit; without the cache, an afternoon of hot reloads leaks
@@ -29,7 +35,13 @@ const globalForDb = globalThis as unknown as {
 
 const connection =
   globalForDb.connection ??
-  postgres(serverEnv.DATABASE_URL, { prepare: false, max: 1 });
+  postgres(serverEnv.DATABASE_URL, {
+    prepare: false,
+    max: 3,
+    // Hand connections back to the pooler rather than holding them for the
+    // life of a warm function instance.
+    idle_timeout: 20,
+  });
 
 if (process.env.NODE_ENV !== "production") {
   globalForDb.connection = connection;

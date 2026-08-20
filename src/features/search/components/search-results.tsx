@@ -3,50 +3,46 @@ import Link from "next/link";
 import type { SearchResult } from "../search.types";
 import { HighlightedSnippet } from "./highlighted-snippet";
 
-/**
- * The result list. A server component: it renders data the page already
- * fetched and needs no interactivity, so none of it ships as JavaScript.
- */
+/** Server-rendered results; the annotation id deep-link selects the matching mark. */
 export function SearchResults({ results }: { results: SearchResult[] }) {
   return (
-    <ul className="flex flex-col gap-3">
+    <ol className="border-t border-rule">
       {results.map((result) => (
-        <li
-          key={result.annotationId}
-          className="rounded-lg border border-ink-muted/15 transition-colors hover:border-accent/50"
-        >
+        <li key={result.annotationId} className="border-b border-rule">
           <Link
-            href={`/books/${result.bookId}/pages/${result.pageNumber}`}
-            className="flex flex-col gap-2 p-4"
+            href={`/books/${result.bookId}/pages/${result.pageNumber}?annotation=${result.annotationId}`}
+            className="group grid gap-2 py-5 sm:grid-cols-[11rem_1fr] sm:gap-8"
           >
-            <span className="flex flex-wrap items-baseline gap-x-2 text-sm text-ink-muted">
-              <span className="font-medium text-ink dark:text-paper">
+            <span className="flex flex-col text-xs text-ink-muted">
+              <span className="font-serif text-base text-ink group-hover:text-accent">
                 {result.bookTitle}
               </span>
               <span>{result.bookAuthor}</span>
-              <span>· page {result.pageNumber}</span>
+              <span className="mt-1 tabular-nums">Page {result.pageNumber}</span>
             </span>
 
-            {result.commentSnippet.trim() ? (
-              <span className="text-sm">
-                <HighlightedSnippet text={result.commentSnippet} />
-              </span>
-            ) : null}
+            <span className="flex max-w-[66ch] flex-col gap-2">
+              {result.commentSnippet.trim() ? (
+                <span className="text-sm leading-6">
+                  <HighlightedSnippet text={result.commentSnippet} />
+                </span>
+              ) : null}
 
-            {result.passageSnippet ? (
-              <span className="border-l-2 border-accent/40 pl-3 text-sm italic text-ink-muted">
-                <HighlightedSnippet text={result.passageSnippet} />
-              </span>
-            ) : (
-              <span className="text-xs text-ink-muted">
-                {result.enrichmentStatus === "failed"
-                  ? "The passage could not be extracted, so only your note is searchable."
-                  : "The passage has not been extracted yet, so only your note is searchable."}
-              </span>
-            )}
+              {result.passageSnippet ? (
+                <span className="font-serif text-base leading-7 text-ink-muted">
+                  <HighlightedSnippet text={result.passageSnippet} />
+                </span>
+              ) : (
+                <span className="text-xs italic text-ink-muted">
+                  {result.enrichmentStatus === "failed"
+                    ? "Passage extraction failed; this result comes from your note."
+                    : "Passage not extracted yet; this result comes from your note."}
+                </span>
+              )}
+            </span>
           </Link>
         </li>
       ))}
-    </ul>
+    </ol>
   );
 }

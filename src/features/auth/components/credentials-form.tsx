@@ -36,7 +36,7 @@ export function CredentialsForm({
           type="email"
           autoComplete="email"
           required
-          className="rounded-md border border-ink-muted/30 bg-transparent px-3 py-2 outline-none focus:border-accent"
+          className="min-w-0 w-full border border-rule bg-paper-raised px-3 py-2.5 outline-none focus:border-accent"
         />
       </label>
 
@@ -51,12 +51,12 @@ export function CredentialsForm({
           autoComplete="current-password"
           required
           minLength={8}
-          className="rounded-md border border-ink-muted/30 bg-transparent px-3 py-2 outline-none focus:border-accent"
+          className="min-w-0 w-full border border-rule bg-paper-raised px-3 py-2.5 outline-none focus:border-accent"
         />
       </label>
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">
           {state.error}
         </p>
       ) : null}
@@ -70,7 +70,7 @@ export function CredentialsForm({
       <button
         type="submit"
         disabled={isPending}
-        className="rounded-md bg-accent px-4 py-2 font-medium text-paper disabled:opacity-60"
+        className="bg-accent px-4 py-2.5 font-medium text-paper disabled:opacity-60"
       >
         {isPending ? "Working…" : submitLabel}
       </button>

@@ -30,7 +30,7 @@ export default async function SignInPage({
       {confirmationError ? (
         <p
           role="alert"
-          className="rounded-md border border-red-600/40 px-3 py-2 text-sm text-red-600"
+          className="border-l-2 border-danger pl-3 text-sm text-danger"
         >
           {confirmationError}
         </p>

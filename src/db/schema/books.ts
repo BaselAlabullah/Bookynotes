@@ -30,6 +30,18 @@ export const books = pgTable(
     coverUrl: text("cover_url"),
 
     /**
+     * Our own copy of the cover, in the private bucket.
+     *
+     * Open Library's CDN answers in 1.5 to 2.8 seconds, measured, which is long
+     * enough that a library of covers renders as a wall of alt text before the
+     * images arrive. Fetching each cover once at add time and serving it from
+     * the same bucket as everything else removes a third party from every page
+     * load. Nullable: the copy is allowed to fail, and `coverUrl` remains as a
+     * fallback.
+     */
+    coverStorageKey: text("cover_storage_key"),
+
+    /**
      * Open Library work key, e.g. "OL45804W". Nullable because a book can be
      * added by hand when Open Library has never heard of it.
      */

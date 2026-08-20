@@ -11,26 +11,113 @@
     "Helvetica Neue", Arial, sans-serif;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
 
-  /* Paper-and-ink palette. Annotations sit on photographs of book pages, so the
-     interface stays low-contrast and warm to avoid competing with them. */
-  --color-paper: #faf7f2;
-  --color-paper-dark: #17150f;
-  --color-ink: #1c1917;
-  --color-ink-muted: #78716c;
-  --color-accent: #b45309;
+  /* Neutral paper, black ink, and one editorial red. The accent is reserved
+     for selections and the primary action; it is not a surface colour. */
+  --color-paper: #f5f5f0;
+  --color-paper-raised: #fffefa;
+  --color-paper-deep: #e9e9e2;
+  --color-ink: #121211;
+  --color-ink-muted: #666660;
+  --color-rule: #cfcfc6;
+  --color-accent: #d9472b;
+  --color-danger: #a72f24;
 }
 
 @layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  * {
+    border-color: var(--color-rule);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     background-color: var(--color-paper);
     color: var(--color-ink);
     font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
   }
 
-  @media (prefers-color-scheme: dark) {
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  }
+
+  :where(a, button, input, textarea, select, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
+  }
+
+  :where(button, input, textarea, select) {
+    font: inherit;
+  }
+
+  :where(input, textarea, select) {
+    color: var(--color-ink);
+  }
+
+  :where(input, textarea)::placeholder {
+    color: color-mix(in srgb, var(--color-ink-muted) 72%, transparent);
+  }
+
+  mark {
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    color: inherit;
+    padding-inline: 0.08em;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
+
+  @media print {
     body {
-      background-color: var(--color-paper-dark);
-      color: var(--color-paper);
+      background: white;
+      color: #181512;
+    }
+
+    .app-header,
+    .screen-only,
+    .annotation-canvas-region,
+    .page-filmstrip {
+      display: none !important;
+    }
+
+    .annotation-layout,
+    .annotation-margin {
+      display: block !important;
+    }
+
+    .annotation-margin {
+      width: 100% !important;
+      border: 0 !important;
+    }
+
+    .annotation-card {
+      break-inside: avoid;
+      border: 0 !important;
+      border-bottom: 1px solid #cfc8bc !important;
+      padding: 1.25rem 0 !important;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
     }
   }
 }

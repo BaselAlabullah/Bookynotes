@@ -23,7 +23,9 @@ type AnnotationCanvasProps = {
   annotations: Annotation[];
   draft: NormalizedRect | null;
   selectedId: string | null;
+  highlightedId: string | null;
   onSelect: (id: string | null) => void;
+  onHighlight: (id: string | null) => void;
   onDraftChange: (rect: NormalizedRect | null) => void;
 };
 
@@ -80,7 +82,9 @@ export function AnnotationCanvas({
   annotations,
   draft,
   selectedId,
+  highlightedId,
   onSelect,
+  onHighlight,
   onDraftChange,
 }: AnnotationCanvasProps) {
   const startRef = useRef<{ x: number; y: number } | null>(null);
@@ -169,7 +173,7 @@ export function AnnotationCanvas({
   const heightLimitedWidth = `calc(${FIT_HEIGHT_VH * zoom}vh * ${imageWidth} / ${imageHeight})`;
 
   return (
-    <div className="max-h-[82vh] overflow-auto rounded border border-ink-muted/20">
+    <div className="max-h-[82vh] overflow-auto bg-paper-deep/50 shadow-inner">
       {/*
         Sizing this wrapper is the entire zoom implementation. The image is
         w-full, the SVG is stretched over it, and the badges are positioned in
@@ -224,15 +228,29 @@ export function AnnotationCanvas({
               // any zoom. Without it, a stroke width in unit-square
               // coordinates would be about half the page wide.
               vectorEffect="non-scaling-stroke"
-              strokeWidth={selectedId === annotation.id ? 3 : 1.5}
+              strokeWidth={highlightedId === annotation.id ? 3 : 1.5}
               className={
-                selectedId === annotation.id
+                highlightedId === annotation.id
                   ? "fill-accent/20 stroke-accent"
-                  : "fill-accent/5 stroke-accent/60 hover:fill-accent/15"
+                  : "fill-accent/5 stroke-accent/70 hover:fill-accent/15"
               }
+              role="button"
+              tabIndex={0}
+              aria-label={`Select annotation ${annotations.indexOf(annotation) + 1}`}
+              onPointerDown={(event) => event.stopPropagation()}
+              onPointerEnter={() => onHighlight(annotation.id)}
+              onPointerLeave={() => onHighlight(null)}
+              onFocus={() => onHighlight(annotation.id)}
+              onBlur={() => onHighlight(null)}
               onPointerUp={(event) => {
                 event.stopPropagation();
                 onSelect(annotation.id);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelect(annotation.id);
+                }
               }}
             />
           ))}
@@ -255,7 +273,11 @@ export function AnnotationCanvas({
           <span
             key={annotation.id}
             aria-hidden
-            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium text-paper"
+            className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+              selectedId === annotation.id
+                ? "bg-accent text-paper"
+                : "bg-paper-raised text-accent ring-1 ring-accent"
+            }`}
             style={{
               left: `${annotation.rectX * 100}%`,
               top: `${annotation.rectY * 100}%`,

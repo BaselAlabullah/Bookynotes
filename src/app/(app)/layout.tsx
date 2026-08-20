@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { requireUser } from "@/features/auth/auth.session";
 import { SignOutButton } from "@/features/auth/components/sign-out-button";
+import { AppShortcuts } from "@/components/ui/app-shortcuts";
 
 /**
  * Everything inside the (app) route group requires a session.
@@ -20,23 +21,38 @@ export default async function AppLayout({
   const user = await requireUser();
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-8 px-6 py-8">
-      <header className="flex items-center justify-between gap-4 border-b border-ink-muted/20 pb-4">
-        <div className="flex items-baseline gap-6">
-          <Link href="/library" className="font-serif text-xl">
+    <div className="mx-auto flex min-h-dvh w-full max-w-[96rem] flex-col px-4 sm:px-6 lg:px-8">
+      <header className="app-header flex min-h-20 flex-wrap items-center gap-x-6 gap-y-3 border-b border-ink py-3">
+        <div className="flex items-baseline gap-5">
+          <Link href="/library" className="text-xs font-semibold uppercase tracking-[0.22em]">
             Marginalia
           </Link>
-          <Link href="/search" className="text-sm underline">
-            Search
+          <span aria-hidden className="hidden h-4 border-l border-rule sm:block" />
+          <Link href="/library" className="hidden text-xs text-ink-muted hover:text-ink sm:block">
+            Library
           </Link>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-ink-muted">{user.email}</span>
+
+        <form action="/search" method="get" className="order-3 flex w-full sm:order-none sm:ml-auto sm:w-72">
+          <label htmlFor="global-search" className="sr-only">Search annotations</label>
+          <div className="flex w-full items-center border-b border-rule focus-within:border-accent">
+            <svg aria-hidden viewBox="0 0 20 20" className="size-4 shrink-0 fill-none stroke-current text-ink-muted" strokeWidth="1.5">
+              <circle cx="8.5" cy="8.5" r="5.5" />
+              <path d="m12.5 12.5 4 4" />
+            </svg>
+            <input id="global-search" name="q" type="search" placeholder="Search your marginalia" className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm outline-none" />
+            <kbd className="text-[10px] text-ink-muted">/</kbd>
+          </div>
+        </form>
+
+        <div className="ml-auto flex items-center gap-3 sm:ml-0">
+          <span className="hidden max-w-44 truncate text-xs text-ink-muted lg:block">{user.email}</span>
+          <AppShortcuts />
           <SignOutButton />
         </div>
       </header>
 
-      {children}
+      <div className="flex-1 py-7 sm:py-10">{children}</div>
     </div>
   );
 }

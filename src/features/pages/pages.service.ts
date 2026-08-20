@@ -2,15 +2,18 @@ import { isUniqueViolation } from "@/db/errors";
 import type { UserId } from "@/db/ids";
 import { findBook } from "@/features/books/books.repository";
 import {
+  createSignedRead,
   createSignedUpload,
   objectExists,
   removeObject,
+  uploadObject,
 } from "@/integrations/storage/storage.client";
 import type { SignedUpload } from "@/integrations/storage/storage.types";
 
 import { insertPage } from "./pages.repository";
 import type { CompleteUploadInput, UploadTargetInput } from "./pages.schema";
 import { buildStorageKey, isStorageKeyOwnedBy } from "./pages.storage-key";
+import { buildThumbnail, thumbnailKeyFor } from "./pages.thumbnail";
 import type { Page } from "./pages.types";
 
 /**
@@ -79,6 +82,11 @@ export async function completeUpload(
     return { status: "missing-object" };
   }
 
+  // Generated before the insert so the row is written complete. Failure is
+  // tolerated and recorded as null: a page without a thumbnail costs bandwidth,
+  // a failed upload costs the annotation the reader was about to make.
+  const thumbnailStorageKey = await tryBuildThumbnail(input.storageKey);
+
   try {
     const page = await insertPage(userId, {
       bookId: input.bookId,
@@ -86,6 +94,7 @@ export async function completeUpload(
       storageKey: input.storageKey,
       imageWidth: input.imageWidth,
       imageHeight: input.imageHeight,
+      thumbnailStorageKey,
     });
 
     return { status: "created", page };
@@ -102,6 +111,40 @@ export async function completeUpload(
     // litter behind.
     await removeObject(input.storageKey);
 
+    if (thumbnailStorageKey) {
+      await removeObject(thumbnailStorageKey);
+    }
+
     return { status: "duplicate-page" };
+  }
+}
+
+/**
+ * Produce and store a thumbnail, or give up quietly.
+ *
+ * This is the one write path where the server reads the image bytes it told the
+ * browser to upload directly. That is a deliberate exception, the same one
+ * enrichment makes (DECISIONS 0039), and it is confined to a single fetch on a
+ * single request. Every read afterwards is cheaper for it.
+ */
+async function tryBuildThumbnail(storageKey: string): Promise<string | null> {
+  try {
+    const signed = await createSignedRead(storageKey);
+    const response = await fetch(signed.url);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const thumbnail = await buildThumbnail(
+      Buffer.from(await response.arrayBuffer()),
+    );
+    const thumbnailKey = thumbnailKeyFor(storageKey);
+
+    await uploadObject(thumbnailKey, thumbnail, "image/jpeg");
+
+    return thumbnailKey;
+  } catch {
+    return null;
   }
 }

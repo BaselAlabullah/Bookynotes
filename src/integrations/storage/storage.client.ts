@@ -28,11 +28,17 @@ const storage = createClient(
 /**
  * How long a read URL stays valid.
  *
- * Long enough to open a page and look at it, short enough that a URL copied out
- * of devtools and pasted elsewhere stops working quickly. Every page view signs
- * fresh URLs, so there is no benefit to a longer window.
+ * Raised from five minutes to fifteen when signed URLs started being cached.
+ * The reasoning changed with it: URLs used to be freshly signed on every render,
+ * so a short window cost nothing. Now the same URL is reused for ten minutes so
+ * that the browser can actually cache the image behind it — a URL that changes
+ * every render is a cache that never hits.
+ *
+ * Fifteen minutes with a ten minute cache means a URL is always handed out with
+ * at least five minutes of life left. It is still a short-lived credential for
+ * a private object, and it is still never stored.
  */
-const READ_URL_TTL_SECONDS = 300;
+const READ_URL_TTL_SECONDS = 900;
 
 /**
  * A URL the browser can PUT an image to, without the bytes passing through this
@@ -72,6 +78,51 @@ export async function createSignedRead(
 }
 
 /**
+ * Sign many objects in one request.
+ *
+ * The obvious implementation maps `createSignedRead` over an array inside
+ * `Promise.all`, which is what this app did until it was measured: that is one
+ * HTTP request to Supabase per object, and a book with a twelve-page filmstrip
+ * paid twelve of them — about 290ms each — before a single byte of HTML was
+ * sent. Supabase has a batch endpoint; using it makes that one request.
+ *
+ * Returns a Map keyed by storage key. A key that failed to sign is simply
+ * absent, so one unreadable object costs one thumbnail rather than the page.
+ */
+export async function createSignedReads(
+  storageKeys: string[],
+): Promise<Map<string, string>> {
+  const signed = new Map<string, string>();
+
+  if (storageKeys.length === 0) {
+    return signed;
+  }
+
+  // Duplicates would be signed twice and cost payload for nothing; the same
+  // page can appear in a filmstrip and as the main image.
+  const unique = [...new Set(storageKeys)];
+
+  const { data, error } = await storage.createSignedUrls(
+    unique,
+    READ_URL_TTL_SECONDS,
+  );
+
+  if (error || !data) {
+    throw new StorageError("Could not create read URLs.", { cause: error });
+  }
+
+  for (const entry of data) {
+    // The batch endpoint reports per-object failures inline rather than
+    // failing the whole call, which is the behaviour we want.
+    if (entry.path && entry.signedUrl && !entry.error) {
+      signed.set(entry.path, entry.signedUrl);
+    }
+  }
+
+  return signed;
+}
+
+/**
  * Whether an object is really there.
  *
  * Used before writing a page row: the browser uploads directly, so "the upload
@@ -104,6 +155,29 @@ function isObjectNotFound(error: unknown): boolean {
   const status = (error as { status: unknown }).status;
 
   return status === 400 || status === 404;
+}
+
+/**
+ * Upload bytes we produced ourselves.
+ *
+ * Distinct from `createSignedUpload`, which hands the browser a URL and stays
+ * out of the way. This is for derived files the server generates — a thumbnail
+ * from a page photograph — where there is no browser involved and nothing to
+ * hand a URL to.
+ */
+export async function uploadObject(
+  storageKey: string,
+  bytes: Buffer,
+  contentType: string,
+): Promise<void> {
+  const { error } = await storage.upload(storageKey, bytes, {
+    contentType,
+    upsert: true,
+  });
+
+  if (error) {
+    throw new StorageError("Could not store the file.", { cause: error });
+  }
 }
 
 /** Remove an object. Used when a page row is deleted, and to sweep orphans. */

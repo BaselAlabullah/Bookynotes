@@ -14,7 +14,7 @@
  */
 export function SearchForm({ query }: { query: string }) {
   return (
-    <form action="/search" method="get" className="flex gap-2">
+    <form action="/search" method="get" className="flex max-w-3xl gap-2">
       <input
         type="search"
         name="q"
@@ -22,11 +22,11 @@ export function SearchForm({ query }: { query: string }) {
         placeholder="A phrase you remember, or a note you wrote"
         aria-label="Search your annotations"
         autoFocus
-        className="flex-1 rounded-md border border-ink-muted/30 bg-transparent px-3 py-2 outline-none focus:border-accent"
+        className="min-w-0 flex-1 border-b border-rule bg-transparent px-1 py-3 text-lg outline-none focus:border-accent"
       />
       <button
         type="submit"
-        className="rounded-md bg-accent px-4 py-2 font-medium text-paper"
+        className="bg-accent px-5 py-2 text-sm font-medium text-paper"
       >
         Search
       </button>

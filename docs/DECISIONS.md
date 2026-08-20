@@ -1142,3 +1142,305 @@ the planner picks that shape on its own anyway.
 characters reaching the browser, the other user's stuffed annotation absent, a
 one-character query rejected with a message, and `'; drop table annotations; --`
 treated as a search phrase that matched nothing.
+
+---
+
+## 0048 — Margin notes are ordered, not absolutely placed
+
+**Problem.** Notes should sit beside the photographed page, ideally near their
+normalized vertical position, but neighbouring annotations can collide.
+
+**Options.** (a) Absolutely position cards from `rect_y` and add collision
+handling. (b) Use a normal-flow column sorted by `rect_y`.
+
+**Decision.** (b), with the image and note column side by side on wide screens
+and stacked on narrow ones.
+
+**Why.** The order still follows the page from top to bottom, while normal flow
+keeps long notes readable and makes the layout responsive without pixel offsets
+or another geometry system. The column can be collapsed when the photograph
+needs the full width.
+
+---
+
+## 0049 — The page canvas keeps one geometry owner
+
+**Problem.** Moving annotations into a side column narrows the space available
+to the photograph and could tempt the page view to measure and re-project it.
+
+**Options.** (a) Measure the new column and project stored rectangles into
+pixels. (b) Keep the existing image-sized wrapper and derive the height-limited
+width from intrinsic dimensions in CSS.
+
+**Decision.** (b). At 1x the wrapper is still limited by
+`calc(78vh * image_width / image_height)`, now within the left grid column.
+
+**Why.** The image, unit-square SVG, and percentage-positioned labels remain
+one painted box. The browser continues to scale all three together, at every
+viewport and zoom, with no observer or projection code.
+
+---
+
+## 0050 — Navigation uses URL state and small client islands
+
+**Problem.** Page movement, annotation movement, global search, and selected
+search results need to work without turning server-rendered features into a
+client application.
+
+**Options.** (a) Add a client navigation shell and client search. (b) Keep links
+and GET forms as the source of truth, adding keyboard listeners only where a
+shortcut needs them.
+
+**Decision.** (b). Search results append `?annotation=<id>`, the page reads it
+server-side, and the annotator uses it as initial selection. Search remains a
+server component with a GET form and zero client JavaScript.
+
+**Why.** URLs stay shareable and back-button friendly. The small shortcut
+islands add `/`, arrows, `j`/`k`, and Escape without duplicating routing or
+search state in the browser.
+
+---
+
+## 0051 — Dark mode is a complete token inversion
+
+**Problem.** The original dark mode changed only the body colors, leaving
+light-oriented borders, fields, and surfaces inconsistent.
+
+**Options.** (a) Remove dark mode. (b) Override the full semantic paper, ink,
+rule, accent, and danger palette under `prefers-color-scheme`.
+
+**Decision.** (b), using warm charcoal rather than black, plus an explicit
+`color-scheme` so native controls follow it.
+
+**Why.** Every utility reads the same semantic tokens, so the whole interface
+inverts together without component-level dark variants. The print stylesheet
+separately returns to black ink on white paper and emits the annotation reading
+list without application controls or page photographs.
+
+---
+
+## 0052 — One neutral paper theme, no automatic dark mode
+
+**Problem.** The warm dark inversion made the redesign read as brown and hid
+the requested off-white direction on any machine set to dark appearance.
+
+**Options.** (a) Keep tuning the automatic dark palette. (b) Make the designed
+off-white palette the single appearance.
+
+**Decision.** (b), superseding 0051.
+
+**Why.** This interface treats the screen as a sheet of paper. A stable neutral
+ivory, near-black ink, gray rules, and one vermilion annotation colour makes
+that idea clear and keeps the portfolio presentation consistent across machines.
+
+---
+
+## 0053 — Thumbnails are generated at upload, not derived at render
+
+**Problem.** A twelve-page book grid downloaded **24 MB**. `width`, `height` and
+CSS change how many pixels are painted, never how many are fetched, so a 2000 by
+3000 phone photograph was being pulled down to fill a box a couple of hundred
+pixels wide.
+
+**Options.** (a) Supabase Storage image transformations — the obvious answer,
+and a paid feature. (b) A `next/image` loader, which is metered on Vercel's free
+tier and was already declined in 0022. (c) Generate a thumbnail once, at upload,
+with the `sharp` we already depend on.
+
+**Decision.** (c). `pages.thumbnail_storage_key` holds a 480px JPEG derived from
+the original; grids and filmstrips use it, and only the page actually being read
+gets the full photograph.
+
+**Why.** The work happens once on a write that already involves an upload, and
+never again on any read. Measured on the same twelve-page book: **24.17 MB to
+0.19 MB**, with individual pages going from 2062 KB to 16 KB.
+
+The column is nullable and readers fall back to the original, because thumbnail
+generation is allowed to fail — a page without a thumbnail costs bandwidth, a
+failed upload costs the annotation the reader was about to make. Rows predating
+the column are fixed by `npm run backfill:thumbnails`.
+
+---
+
+## 0054 — One signing request, and the URL is allowed to be reused
+
+**Problem.** Two separate faults in the same code. Opening a page signed every
+image in the book one request at a time — twelve round trips at roughly 290ms
+each before any HTML was sent. And because each render signed fresh URLs, every
+navigation produced URLs the browser had never seen, so it re-downloaded images
+it already had.
+
+**Options.** (a) Leave it; the requests are concurrent. (b) Batch the signing.
+(c) Batch it and cache the result so URLs are stable.
+
+**Decision.** (c). `createSignedReads` uses Supabase's batch endpoint, and
+`pages.images.ts` caches the result for ten minutes.
+
+**Why.** Concurrency does not make twelve round trips free, and the batch
+endpoint exists. Caching is the less obvious half: **a signed URL that changes
+on every render is a cache that never hits**, which quietly defeated the
+browser's own image cache on every navigation.
+
+This required raising the URL lifetime from five to fifteen minutes, which
+weakens 0027 slightly and deliberately. A cached URL is always handed out with
+at least five minutes of validity left. It is still short-lived, and still never
+stored in the database.
+
+What is cached is an answer, not a permission: every caller has already proved
+ownership before reaching the signing code, exactly as before. Keys begin with
+the owner's user id, so two users cannot collide.
+
+---
+
+## 0055 — Verifying the session locally
+
+**Problem.** Every protected navigation cost about **870ms of auth alone** —
+`getUser()` in the proxy, again in the layout, and again in the page, each one a
+round trip to Supabase in Tokyo measured at 284ms.
+
+**Options.** (a) Keep three remote verifications. (b) Deduplicate within a
+render and verify remotely once. (c) Deduplicate and verify the token locally
+against the project's published signing keys.
+
+**Decision.** All of (b) and (c).
+
+- `getCurrentUser` is wrapped in React's `cache()`, so the layout and the page
+  share one answer per request while still being independent calls in the code.
+  That independence is deliberate (0016) and now costs nothing.
+- It verifies with `getClaims()`, which checks the access token's ES256
+  signature against the project's JWKS and its expiry, locally. **1ms against
+  284ms.** A tampered signature is rejected — tested, not assumed.
+- The proxy no longer verifies at all. It reads the session's expiry locally and
+  refreshes only inside a five-minute window before it lapses. Measured cost of
+  the proxy afterwards: 4ms.
+
+**Why this is not a reversal of 0015.** That entry's rule was *verify, never
+merely decode*. `getSession()` reads the cookie and believes it, which is an
+authentication bypass. `getClaims()` proves the token was issued by Supabase and
+has not been altered. The proxy's use of `getSession()` decides only whether a
+refresh is due — not who the caller is — and every real authorization decision
+still runs through `requireUser()`.
+
+**The cost, stated plainly.** Local verification cannot know a user was deleted
+or a session revoked since the token was issued, so there is a staleness window
+of up to one hour. This app has no ban flow and no "sign out everywhere", and a
+deleted user's rows are gone by cascade, so a stale token buys an attacker an
+empty library. An app with real revocation requirements should pay the 284ms. A
+remote fallback remains for projects without asymmetric signing keys.
+
+---
+
+## 0056 — The connection pool was the reason Promise.all did nothing
+
+**Problem.** Independent queries were wrapped in `Promise.all` and the page got
+no faster. Arithmetic gave it away: each additional query added almost exactly
+one round trip.
+
+**Cause.** `max: 1` on the postgres client. The original reasoning — "a function
+instance handles one request at a time" — is true and irrelevant. It is not
+about concurrent *requests*; it is about concurrent *queries within* one. Two
+statements issued at the same moment queued behind a single connection.
+
+**Decision.** `max: 3`, with a 20 second idle timeout.
+
+**Why three.** It is the widest fan-out any page here has. The transaction
+pooler multiplexes, so idle client connections are cheap, and an idle timeout
+hands them back rather than holding them for the life of a warm instance.
+
+Measured, on the book page: **863ms to 429ms**, from a one-line change that only
+became visible because the parallelism was already there and doing nothing.
+
+---
+
+## 0057 — Route-level loading files instead of a blank wait
+
+**Problem.** Every protected route is dynamically rendered, and has to be — the
+content is one person's library. So the server cannot answer until it has
+established who is calling and queried what they own. Even at 400ms that is a
+visible dead pause on every navigation.
+
+**Options.** (a) Make routes static — impossible, the data is per-user.
+(b) Accept the pause. (c) Add `loading.tsx` at each route so Next sends the
+shell immediately and streams the rest.
+
+**Decision.** (c), with skeletons laid out to match the real content — the page
+view's places the margin column where the margin column goes — so arriving
+content lands where the placeholder already was instead of shoving the layout.
+
+The skeletons are a flat tint, not a shimmer. A shimmering gradient is the house
+style of every generated dashboard, it animates something the user cannot act
+on, and it is exactly what `prefers-reduced-motion` exists to suppress.
+
+---
+
+## 0058 — Measuring the performance pass
+
+Not a fork, a receipt. Everything above was measured on a production build
+against the live project, using a seeded twelve-page book with 2 MB photographs,
+median of five runs. The seeded data was removed afterwards.
+
+| | before | after |
+| --- | --- | --- |
+| `/library` | 1071 ms | **393 ms** |
+| `/books/[id]` | 1850 ms | **429 ms** |
+| page view | 2550 ms | **799 ms** |
+| book grid download | 24.17 MB | **0.19 MB** |
+| page view download | 26.18 MB | **2.20 MB** |
+| signed URL stable across renders | no | **yes** |
+
+Correctness was re-checked afterwards, because a performance pass is exactly
+where a coordinate bug would hide: the filmstrip renders 12 thumbnails and 1
+full-size image, `viewBox="0 0 1 1"` is intact, a stored rectangle of
+0.6 by 0.04 still reaches the DOM as `width="0.6" height="0.04"`, and a
+signed-out request to a page still redirects to `/sign-in`.
+
+The remaining 799ms on the page view is two waves of database round trips to
+Tokyo. It could be cut to one by fetching annotations through a join on page
+number, at the cost of a cross-domain join in a write-side repository. Not
+taken: with a loading skeleton in front of it, the honest fix is a database
+closer to the user, not more cleverness.
+
+---
+
+## 0059 — Book covers are copied into our own bucket
+
+**Problem.** The library page rendered as a column of alt text — "Cover of
+Empire of Silence" printed in the gap where each cover should be — and then
+rearranged itself seconds later when the images arrived.
+
+Two separate causes, and it is worth separating them because only one is a
+performance problem:
+
+1. **Open Library's CDN is slow.** Measured on the three real books: 1510ms,
+   1550ms and 2786ms, and on a later run 2815ms to 5251ms. For 16 to 24 KB.
+2. **A loading image shows its alt text.** That is what was actually on screen.
+   Even a fast image would flash it, and no amount of speed removes it.
+
+**Options.** (a) A skeleton behind the image and accept the CDN.
+(b) `next/image` with the Open Library host allowed — metered on Vercel's free
+tier, and already declined in 0022. (c) Fetch each cover once when the book is
+added, store it in the bucket we already use, and serve it the way page
+thumbnails are served.
+
+**Decision.** (c), plus the placeholder from (a). They fix different halves.
+
+**Why.** Storing it removes a third party from every library render, and puts
+covers on the same batched, cached signing path as everything else — so the URL
+is stable and the browser can cache the image between navigations, which it
+could not do while the URL came from someone else's CDN with no caching story of
+ours.
+
+Measured afterwards: 9 KB instead of 16, and **48 to 138ms warm against Open
+Library's 2800ms**. The first fetch of a new object is around a second while the
+CDN is cold; every one after is not.
+
+The placeholder is the other half and is not a skeleton component. The wrapper
+occupies the cover's exact size from first paint, so nothing moves when the
+image lands, and `color: transparent` on the image hides the alt text
+*visually* while the bytes are in flight. It is still there for screen readers.
+That is the specific artefact that was complained about, and it is a rendering
+detail rather than a missing image.
+
+`cover_storage_key` is nullable and `cover_url` is kept, so a failed copy
+degrades to the old slow path rather than to no cover at all. Books added before
+this existed are fixed by `npm run backfill:covers`.

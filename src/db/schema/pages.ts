@@ -39,6 +39,14 @@ export const pages = pgTable(
     imageWidth: integer("image_width").notNull(),
     imageHeight: integer("image_height").notNull(),
 
+    /**
+     * A small derived copy, for grids and filmstrips. Nullable because it is
+     * generated after the upload and that generation is allowed to fail: a
+     * missing thumbnail costs bandwidth, a missing page costs the annotation.
+     * Readers fall back to the full image.
+     */
+    thumbnailStorageKey: text("thumbnail_storage_key"),
+
     ...timestamps,
   },
   (table) => [

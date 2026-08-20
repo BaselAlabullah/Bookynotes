@@ -1,90 +1,94 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { asBookId } from "@/db/ids";
 import { listAnnotationsForPage } from "@/features/annotations/annotations.repository";
 import { PageAnnotator } from "@/features/annotations/components/page-annotator";
 import { requireUser } from "@/features/auth/auth.session";
 import { findBook } from "@/features/books/books.repository";
+import { PageFilmstrip } from "@/features/pages/components/page-filmstrip";
 import { listPagesForBook } from "@/features/pages/pages.repository";
-import { createSignedRead } from "@/integrations/storage/storage.client";
+import { signPageImages } from "@/features/pages/pages.images";
 
-/**
- * A single page and its annotations.
- *
- * Everything below the fetch is normalized: the annotator receives coordinates
- * as fractions and the image's intrinsic dimensions, and never learns how large
- * the image is being displayed. That is what lets the same row render correctly
- * on a phone, on a laptop, and at 3x zoom.
- */
+/** A page view keeps every rendered rectangle in normalized image space. */
 export default async function PageView({
   params,
+  searchParams,
 }: {
   params: Promise<{ bookId: string; pageNumber: string }>;
+  searchParams: Promise<{ annotation?: string }>;
 }) {
   const user = await requireUser();
   const { bookId, pageNumber } = await params;
+  const { annotation: selectedAnnotationId } = await searchParams;
+  // Both queries need only the user and the book id, so waiting for the first
+  // before starting the second bought nothing but a second round trip. The
+  // database is in Tokyo; each of these costs roughly a quarter of a second,
+  // and this page used to make five of them in a row.
+  const resolvedBookId = asBookId(bookId);
+  const [book, pages] = await Promise.all([
+    findBook(user.id, resolvedBookId),
+    listPagesForBook(user.id, resolvedBookId),
+  ]);
 
-  const book = await findBook(user.id, asBookId(bookId));
+  if (!book) notFound();
 
-  if (!book) {
-    notFound();
-  }
-
-  // Page numbers are unique within a book, so the number in the URL identifies
-  // one. Looking it up through the book's own scoped list means there is no
-  // second place where ownership has to be checked.
-  const pages = await listPagesForBook(user.id, book.id);
   const parsedNumber = Number(pageNumber);
   const page = pages.find((candidate) => candidate.pageNumber === parsedNumber);
 
-  if (!page) {
-    notFound();
-  }
+  if (!page) notFound();
 
   const index = pages.indexOf(page);
   const previous = index > 0 ? pages[index - 1] : undefined;
   const next = index < pages.length - 1 ? pages[index + 1] : undefined;
 
-  const annotations = await listAnnotationsForPage(user.id, page.id);
-
-  let imageUrl: string | null = null;
-
-  try {
-    imageUrl = (await createSignedRead(page.storageKey)).url;
-  } catch {
-    imageUrl = null;
-  }
+  // Annotations and image signing both depend on the page, and on nothing from
+  // each other, so they overlap too.
+  //
+  // One signing request covers the whole view: a thumbnail for every filmstrip
+  // frame, plus the full-size photograph for the page actually being read.
+  const [annotations, { thumbnails: previewUrls, full }] = await Promise.all([
+    listAnnotationsForPage(user.id, page.id),
+    signPageImages(pages, [page.id]),
+  ]);
+  const imageUrl = full.get(page.id) ?? null;
+  const previousHref = previous
+    ? `/books/${book.id}/pages/${previous.pageNumber}`
+    : undefined;
+  const nextHref = next
+    ? `/books/${book.id}/pages/${next.pageNumber}`
+    : undefined;
 
   return (
-    <main className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="flex flex-col">
-          <Link href={`/books/${book.id}`} className="text-sm underline">
-            {book.title}
-          </Link>
-          <h1 className="font-serif text-2xl">Page {page.pageNumber}</h1>
-        </div>
+    <main className="flex flex-col gap-5">
+      <Breadcrumbs
+        items={[
+          { label: "Library", href: "/library" },
+          { label: book.title, href: `/books/${book.id}` },
+          { label: `Page ${page.pageNumber}` },
+        ]}
+      />
 
-        <nav className="flex gap-4 text-sm">
-          {previous ? (
-            <Link
-              href={`/books/${book.id}/pages/${previous.pageNumber}`}
-              className="underline"
-            >
-              ← Page {previous.pageNumber}
-            </Link>
-          ) : null}
-          {next ? (
-            <Link
-              href={`/books/${book.id}/pages/${next.pageNumber}`}
-              className="underline"
-            >
-              Page {next.pageNumber} →
-            </Link>
-          ) : null}
-        </nav>
-      </div>
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-rule pb-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.16em] text-ink-muted">{book.author}</p>
+          <h1 className="mt-1 font-serif text-2xl tracking-tight">{book.title}</h1>
+        </div>
+        <div className="flex items-center gap-5">
+          <nav className="screen-only flex gap-4 text-xs text-ink-muted" aria-label="Adjacent pages">
+            {previousHref && previous ? (
+              <Link href={previousHref} className="underline decoration-rule underline-offset-4 hover:text-ink">← {previous.pageNumber}</Link>
+            ) : null}
+            {nextHref && next ? (
+              <Link href={nextHref} className="underline decoration-rule underline-offset-4 hover:text-ink">{next.pageNumber} →</Link>
+            ) : null}
+          </nav>
+          <p className="font-serif text-lg tabular-nums [font-variant-numeric:oldstyle-nums]">Page {page.pageNumber}</p>
+        </div>
+      </header>
+
+      <PageFilmstrip bookId={book.id} pages={pages} previewUrls={previewUrls} currentPageId={page.id} />
 
       {imageUrl ? (
         <PageAnnotator
@@ -93,16 +97,18 @@ export default async function PageView({
           imageWidth={page.imageWidth}
           imageHeight={page.imageHeight}
           annotations={annotations}
+          initialSelectedId={selectedAnnotationId}
+          previousHref={previousHref}
+          nextHref={nextHref}
         />
       ) : (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">
           That image could not be loaded right now, so it cannot be annotated.
         </p>
       )}
 
-      <p className="text-xs text-ink-muted">
-        {page.imageWidth} × {page.imageHeight} pixels. Annotation coordinates are
-        stored as fractions of these dimensions, never as pixels.
+      <p className="screen-only text-[11px] text-ink-muted">
+        {page.imageWidth} × {page.imageHeight} pixels · marks stored as normalized coordinates
       </p>
     </main>
   );

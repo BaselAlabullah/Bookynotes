@@ -15,6 +15,20 @@
       "when": 1787165884011,
       "tag": "0001_auth_user_foreign_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787214484844,
+      "tag": "0002_page_thumbnails",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787217035056,
+      "tag": "0003_stored_book_covers",
+      "breakpoints": true
     }
   ]
 }

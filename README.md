@@ -8,10 +8,10 @@ pulls out the surrounding context, so the note is stored with the text it refers
 to rather than with a page number. Everything you have ever marked is then
 searchable across your whole library.
 
-> Status: phase 8 of 9. Feature complete: add a book, photograph a page, mark a
-> passage, have a vision model transcribe it, and search every annotation you
-> have ever made. A design pass and deployment remain. Phases are tracked at the
-> bottom of this file.
+> Status: phase 8.5 of 9. Feature complete and design-complete: add a book,
+> photograph a page, mark a passage, have a vision model transcribe it, and
+> search every annotation you have ever made. Deployment remains. Phases are
+> tracked at the bottom of this file.
 
 ## Architecture
 
@@ -135,6 +135,37 @@ the foreign keys added by `0001_auth_user_foreign_keys.sql`. See
 The app refuses to start if a required environment variable is missing or
 malformed, by design — see `src/config/env.public.ts`.
 
+## Performance notes
+
+The app talks to Supabase in Tokyo, so every avoidable round trip is worth about
+200-290ms. Measured on a production build with a twelve-page book of 2 MB
+photographs (DECISIONS 0053-0058):
+
+| | before | after |
+| --- | --- | --- |
+| `/library` | 1071 ms | 393 ms |
+| `/books/[id]` | 1850 ms | 429 ms |
+| page view | 2550 ms | 799 ms |
+| book grid download | 24.17 MB | 0.19 MB |
+
+What made the difference, in order of size:
+
+- **Thumbnails.** `sharp` generates a 480px JPEG at upload; grids and filmstrips
+  use it. CSS only changes how many pixels are painted, never how many are
+  fetched. Run `npm run backfill:thumbnails` for pages uploaded before this
+  existed.
+- **Book covers are copied into our own bucket** at add time. Open Library's CDN
+  takes 1.5 to 5 seconds to answer; ours takes 48 to 138ms warm. Run
+  `npm run backfill:covers` for books added before this existed.
+- **The connection pool.** `max: 1` meant `Promise.all` queued behind one
+  connection and bought nothing.
+- **Local session verification.** The access token's signature is checked
+  against the project's JWKS rather than by asking the auth server: 1ms instead
+  of 284ms, three times per navigation.
+- **Batched, cached signed URLs.** One request instead of one per image, and a
+  stable URL so the browser's image cache can actually hit.
+- **`loading.tsx` at every route**, so navigation paints immediately.
+
 ## Free-tier gotchas
 
 Notes on the things that actually bite, collected as we hit them.
@@ -185,6 +216,6 @@ Notes on the things that actually bite, collected as we hit them.
 | 6 | Canvas layer: normalized coordinates, pins, resize and zoom | done |
 | 7 | Enrichment: provider interface, pending, backoff, retry | done |
 | 8 | Full-text search with tsvector and GIN | done |
-| 8.5 | Aesthetic overhaul before anything is public | |
+| 8.5 | Aesthetic overhaul before anything is public | done |
 | 9 | Deploy to Vercel and verify end to end | |
 | 10 | Python page-processor: rectify and clean page photographs | |

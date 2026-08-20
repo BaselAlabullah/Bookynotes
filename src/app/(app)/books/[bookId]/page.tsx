@@ -1,13 +1,13 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 
+import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { asBookId } from "@/db/ids";
 import { requireUser } from "@/features/auth/auth.session";
 import { findBook } from "@/features/books/books.repository";
 import { PageGrid } from "@/features/pages/components/page-grid";
 import { PageUploader } from "@/features/pages/components/page-uploader";
 import { listPagesForBook } from "@/features/pages/pages.repository";
-import { createSignedRead } from "@/integrations/storage/storage.client";
+import { signPageImages } from "@/features/pages/pages.images";
 
 /**
  * One book: its pages, and the uploader for adding another.
@@ -25,42 +25,30 @@ export default async function BookPage({
   const user = await requireUser();
   const { bookId } = await params;
 
-  const book = await findBook(user.id, asBookId(bookId));
+  // Independent of each other: both need only the user and the book id.
+  const resolvedBookId = asBookId(bookId);
+  const [book, pages] = await Promise.all([
+    findBook(user.id, resolvedBookId),
+    listPagesForBook(user.id, resolvedBookId),
+  ]);
 
   if (!book) {
     // Covers both "no such book" and "not yours", which is deliberate.
     notFound();
   }
 
-  const pages = await listPagesForBook(user.id, book.id);
-
-  // Signed in parallel: with a dozen pages, doing this in sequence would add a
-  // dozen round trips to Supabase before the first byte of HTML.
-  const signed = await Promise.all(
-    pages.map(async (page) => {
-      try {
-        const read = await createSignedRead(page.storageKey);
-        return [page.id, read.url] as const;
-      } catch {
-        // One unreadable object should cost one thumbnail, not the whole page.
-        return null;
-      }
-    }),
-  );
-
-  const previewUrls = new Map(
-    signed.filter((entry) => entry !== null),
-  );
+  // One request for every thumbnail on the page, and thumbnails rather than
+  // the originals. See features/pages/pages.images.ts for the measurements
+  // that made both of those necessary.
+  const { thumbnails: previewUrls } = await signPageImages(pages);
 
   return (
-    <main className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <Link href="/library" className="text-sm underline">
-          Back to library
-        </Link>
-        <h1 className="font-serif text-3xl">{book.title}</h1>
-        <p className="text-ink-muted">{book.author}</p>
-      </div>
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-8">
+      <Breadcrumbs items={[{ label: "Library", href: "/library" }, { label: book.title }]} />
+      <header className="border-b border-rule pb-5">
+        <p className="text-xs uppercase tracking-[0.16em] text-ink-muted">{book.author}</p>
+        <h1 className="mt-1 max-w-[24ch] font-serif text-4xl leading-tight tracking-tight">{book.title}</h1>
+      </header>
 
       <PageUploader bookId={book.id} />
 

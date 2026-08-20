@@ -170,9 +170,9 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
   return (
     <form
       action={upload}
-      className="flex flex-col gap-3 rounded-lg border border-ink-muted/20 p-4"
+      className="flex flex-col gap-4 border-y border-rule bg-paper-raised px-4 py-5 sm:px-5"
     >
-      <h2 className="font-medium">Add a page</h2>
+      <div><p className="text-xs uppercase tracking-[0.14em] text-ink-muted">New leaf</p><h2 className="mt-1 font-serif text-xl">Add a page</h2></div>
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-sm">
@@ -181,7 +181,7 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
             name="pageNumber"
             type="number"
             required
-            className="w-28 rounded-md border border-ink-muted/30 bg-transparent px-3 py-2"
+            className="w-28 border border-rule bg-paper px-3 py-2 outline-none focus:border-accent"
           />
         </label>
 
@@ -199,7 +199,7 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
         <button
           type="submit"
           disabled={isWorking}
-          className="rounded-md bg-accent px-4 py-2 font-medium text-paper disabled:opacity-60"
+          className="bg-accent px-4 py-2 text-sm font-medium text-paper disabled:opacity-60"
         >
           {isWorking ? "Working…" : "Upload"}
         </button>
@@ -212,7 +212,7 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
       ) : null}
 
       {state.status === "error" ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-danger">
           {state.message}
         </p>
       ) : null}

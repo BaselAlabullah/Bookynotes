@@ -35,6 +35,23 @@ export async function createBook(userId: UserId, input: NewBook): Promise<Book> 
   return created;
 }
 
+/**
+ * Record where our own copy of the cover lives.
+ *
+ * A separate statement rather than part of the insert, because the copy is made
+ * after the row exists — the storage key is derived from the book id.
+ */
+export async function setBookCoverStorageKey(
+  userId: UserId,
+  bookId: BookId,
+  coverStorageKey: string,
+): Promise<void> {
+  await db
+    .update(books)
+    .set({ coverStorageKey, updatedAt: new Date() })
+    .where(and(eq(books.id, bookId), eq(books.userId, userId)));
+}
+
 export async function listBooks(userId: UserId): Promise<Book[]> {
   return db
     .select()

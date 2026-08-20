@@ -1,0 +1,1 @@
+ALTER TABLE "pages" ADD COLUMN "thumbnail_storage_key" text;

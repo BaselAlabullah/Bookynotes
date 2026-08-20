@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { requireUser } from "@/features/auth/auth.session";
 import { SearchForm } from "@/features/search/components/search-form";
 import { SearchResults } from "@/features/search/components/search-results";
@@ -43,27 +44,29 @@ export default async function SearchPage({
   const total = parsed.success ? 0 : await countSearchableAnnotations(user.id);
 
   return (
-    <main className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="font-serif text-3xl">Search</h1>
-        <p className="text-sm text-ink-muted">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8">
+      <Breadcrumbs items={[{ label: "Library", href: "/library" }, { label: "Search" }]} />
+      <header className="flex max-w-2xl flex-col gap-2 border-b border-rule pb-5">
+        <p className="text-xs uppercase tracking-[0.16em] text-ink-muted">Index</p>
+        <h1 className="font-serif text-4xl tracking-tight">Search your reading</h1>
+        <p className="max-w-[60ch] text-sm leading-6 text-ink-muted">
           Your notes and every passage the model has read, across your whole
           library.
         </p>
-      </div>
+      </header>
 
       <SearchForm query={parsed.success ? parsed.data : (q ?? "")} />
 
       {validationMessage ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">
           {validationMessage}
         </p>
       ) : null}
 
       {parsed.success ? (
         results.length > 0 ? (
-          <section className="flex flex-col gap-3">
-            <p className="text-sm text-ink-muted">
+          <section className="flex flex-col gap-4">
+            <p className="text-xs uppercase tracking-[0.12em] text-ink-muted">
               {results.length} {results.length === 1 ? "result" : "results"} for
               “{parsed.data}”
             </p>

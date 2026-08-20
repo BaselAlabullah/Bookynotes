@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "backfill:thumbnails": "node scripts/backfill-thumbnails.mjs",
+    "backfill:covers": "node scripts/backfill-covers.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.4",

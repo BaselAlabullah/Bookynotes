@@ -102,15 +102,15 @@ export function BookSearch() {
 
   return (
     <div className="flex flex-col gap-6">
-      <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium">Search Open Library</span>
+      <label className="flex flex-col gap-2">
+        <span className="text-xs uppercase tracking-[0.12em] text-ink-muted">Search Open Library</span>
         <input
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Title, author, or both"
           autoFocus
-          className="rounded-md border border-ink-muted/30 bg-transparent px-3 py-2 outline-none focus:border-accent"
+          className="border-b border-rule bg-transparent px-1 py-3 text-lg outline-none focus:border-accent"
         />
       </label>
 
@@ -119,19 +119,19 @@ export function BookSearch() {
       ) : null}
 
       {visibleSearchError ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">
           {visibleSearchError}
         </p>
       ) : null}
 
       {addState.error ? (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">
           {addState.error}
         </p>
       ) : null}
 
       {addState.addedTitle ? (
-        <p role="status" className="text-sm text-accent">
+        <p role="status" className="border-l-2 border-accent pl-3 text-sm text-accent">
           Added “{addState.addedTitle}” to your library.
         </p>
       ) : null}
@@ -140,7 +140,7 @@ export function BookSearch() {
         {visibleResults.map((result) => (
           <li
             key={result.openLibraryId}
-            className="flex items-start gap-4 border-b border-ink-muted/15 pb-4"
+            className="flex items-start gap-4 border-b border-rule pb-5"
           >
             <BookCover url={result.coverUrl} title={result.title} />
 
@@ -179,7 +179,7 @@ export function BookSearch() {
               <button
                 type="submit"
                 disabled={isAdding}
-                className="rounded-md border border-accent px-3 py-1.5 text-sm text-accent disabled:opacity-50"
+                className="border border-accent px-3 py-1.5 text-sm text-accent disabled:opacity-50"
               >
                 Add
               </button>

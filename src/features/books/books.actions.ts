@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import { requireUser } from "@/features/auth/auth.session";
 
-import { createBook } from "./books.repository";
+import { storeBookCover } from "./books.cover";
+import { createBook, setBookCoverStorageKey } from "./books.repository";
 import {
   addBookInputSchema,
   type AddBookState,
@@ -38,7 +39,7 @@ export async function addBookAction(
     };
   }
 
-  await createBook(user.id, {
+  const book = await createBook(user.id, {
     title: parsed.data.title,
     author: parsed.data.author,
     coverUrl: parsed.data.coverUrl,
@@ -48,6 +49,24 @@ export async function addBookAction(
     series: null,
     seriesIndex: null,
   });
+
+  // Keep our own copy of the cover. Open Library's CDN takes seconds to answer,
+  // which turns a library page into a wall of alt text; fetching it once here
+  // means every later render serves it from the bucket we already use.
+  //
+  // Deliberately after the insert and tolerant of failure: the book is saved
+  // either way, and `coverUrl` still works as a fallback.
+  if (parsed.data.coverUrl) {
+    const coverStorageKey = await storeBookCover(
+      user.id,
+      book.id,
+      parsed.data.coverUrl,
+    );
+
+    if (coverStorageKey) {
+      await setBookCoverStorageKey(user.id, book.id, coverStorageKey);
+    }
+  }
 
   // The library list is a different route, so it has its own cache entry.
   revalidatePath("/library");
