@@ -1444,3 +1444,67 @@ detail rather than a missing image.
 `cover_storage_key` is nullable and `cover_url` is kept, so a failed copy
 degrades to the old slow path rather than to no cover at all. Books added before
 this existed are fixed by `npm run backfill:covers`.
+
+---
+
+## 0060 — Functions run in Tokyo, next to the database
+
+**Problem.** Vercel puts serverless functions in `iad1` (Washington) by default.
+The Supabase project is in `ap-northeast-1` (Tokyo). Every query would then
+cross the Pacific — 150 to 180ms each — and this app makes two to three waves of
+them to render a page. Deployed on the default, the app would be *slower* than
+it is locally, undoing most of the performance pass.
+
+**Options.** (a) Accept it. (b) Move the database to a region near the user.
+(c) Move the functions to the database's region.
+
+**Decision.** (c). `vercel.json` pins `regions: ["hnd1"]`.
+
+**Why not (b).** Supabase's region is fixed when the project is created;
+changing it means a new project and a migration of the storage bucket, the auth
+users and the data. Not worth it, and it would only relocate the same problem if
+the audience is elsewhere.
+
+**Why (c) rather than accepting the default.** The two legs are not equal. The
+browser-to-function leg is **one** round trip for the HTML document; the
+function-to-database leg is **several**, in sequence, because each wave depends
+on the last. Colocating turns those into single-digit milliseconds and leaves a
+single unavoidable crossing. Static assets are unaffected either way — they come
+off Vercel's edge network wherever the function lives.
+
+The honest cost: a reader far from Tokyo pays more latency on that one document
+request. That is the right trade when the alternative is paying a smaller
+penalty three times over, and it is why the note at the end of 0058 said the fix
+was a database closer to the *server*, not more cleverness in the query layer.
+
+Hobby plans allow exactly one region, which is also why this is a single entry
+rather than a list.
+
+---
+
+## 0061 — `NEXT_PUBLIC_APP_URL` is set explicitly, not inferred from Vercel
+
+**Problem.** The app refuses to build without `NEXT_PUBLIC_APP_URL`, and the
+deployment URL is not known until the project exists. Vercel exposes `VERCEL_URL`
+and `VERCEL_PROJECT_PRODUCTION_URL`, so the value could be derived.
+
+**Options.** (a) Fall back to `VERCEL_URL` when the variable is absent.
+(b) Require it to be set, and document that it must be set before the first
+build.
+
+**Decision.** (b).
+
+**Why.** `NEXT_PUBLIC_*` values are **inlined into the browser bundle at build
+time**, not read at runtime, so a fallback would bake whichever URL happened to
+be present when the bundle was compiled. On a preview deployment that is a
+per-deploy hostname; the confirmation emails it generates would point at a URL
+that stops being interesting the moment the next preview is built.
+
+Requiring the variable also keeps the failure loud and early — a build that
+refuses to start, rather than auth callbacks that quietly point at
+`localhost:3000` in production. That is the same fail-fast rule as 0001, and
+this is exactly the case it was written for.
+
+The practical consequence, which belongs in the README rather than being
+discovered: **changing this variable requires a redeploy**, because setting it
+after the fact changes nothing already compiled.

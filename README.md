@@ -135,6 +135,75 @@ the foreign keys added by `0001_auth_user_foreign_keys.sql`. See
 The app refuses to start if a required environment variable is missing or
 malformed, by design — see `src/config/env.public.ts`.
 
+## Deployment
+
+Vercel, free tier, no card.
+
+### 1. Environment variables
+
+Set these in **Project Settings → Environment Variables** *before the first
+build*. `NEXT_PUBLIC_*` values are compiled into the browser bundle, so changing
+one later requires a redeploy — setting it afterwards changes nothing already
+built.
+
+| Variable | Value | Secret |
+| --- | --- | --- |
+| `NEXT_PUBLIC_APP_URL` | `https://<your-project>.vercel.app`, no trailing slash | no |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://<ref>.supabase.co` | no |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_…` | no |
+| `DATABASE_URL` | Transaction pooler, port **6543** | yes |
+| `SUPABASE_SECRET_KEY` | `sb_secret_…` | yes |
+| `SUPABASE_STORAGE_BUCKET` | `page-images` | no |
+| `GEMINI_API_KEY` | Google AI Studio key | yes |
+
+Optional, each with a working default: `VISION_PROVIDER` (`gemini`),
+`GEMINI_VISION_MODEL` (`gemini-3.5-flash`), and the `OPENROUTER_*` pair if you
+switch providers.
+
+**Do not set `DATABASE_MIGRATION_URL`.** It is only read by `drizzle.config.ts`,
+which never runs on Vercel — migrations are applied deliberately from your own
+machine, not on deploy.
+
+### 2. Supabase has to be told the new origin
+
+**Authentication → URL Configuration**:
+
+- **Site URL** → your production URL
+- **Redirect URLs** → add `https://<your-project>.vercel.app/**`
+
+Skip this and sign-up appears to work while the confirmation link points
+somewhere else.
+
+### 3. Deploy
+
+Import the repository at vercel.com/new. The framework preset is detected; the
+build command and output directory need no changes.
+
+### 4. Migrations are not automatic
+
+`npm run db:migrate` is run by you, against the same database. Nothing on Vercel
+applies schema changes — that is deliberate, so a deploy can never surprise you
+with a migration. Check `npm run db:generate` produced no pending files before
+deploying a schema change.
+
+### Region
+
+`vercel.json` pins functions to `hnd1` (Tokyo) because the Supabase project is
+in `ap-northeast-1`. On Vercel's default region every query would cross the
+Pacific, several times per page, and the app would be measurably slower deployed
+than it is locally. See DECISIONS 0060.
+
+If you ever move the Supabase project, change this to match it.
+
+### After the first deploy, check
+
+- `/api/health` returns `{"status":"ok"}`
+- Sign in works, and the session survives a page reload
+- A book cover loads (it is served from your bucket, not Open Library)
+- A page image loads, and an annotation lands where you draw it
+- Extraction produces a passage — this is the slowest path and the one most
+  likely to hit a free-tier rate limit
+
 ## Performance notes
 
 The app talks to Supabase in Tokyo, so every avoidable round trip is worth about
