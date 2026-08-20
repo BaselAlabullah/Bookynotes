@@ -8,9 +8,9 @@ pulls out the surrounding context, so the note is stored with the text it refers
 to rather than with a page number. Everything you have ever marked is then
 searchable across your whole library.
 
-> Status: phase 5 of 9. You can sign up, add books from Open Library, upload
-> photographs of their pages, and view them. Annotations arrive next. Phases are
-> tracked at the bottom of this file.
+> Status: phase 6 of 9. You can sign up, add books, upload page photographs, and
+> mark passages on them with coordinate-anchored annotations. The vision model
+> arrives next. Phases are tracked at the bottom of this file.
 
 ## Architecture
 
@@ -41,7 +41,10 @@ Four ideas carry most of the design:
 1. **Coordinates are normalized.** An annotation rectangle is stored as four
    floats in `0.0..1.0` against the image's intrinsic dimensions. Pixels are
    never stored or passed across a boundary, so a pin lands in the same place on
-   a phone, a laptop, and a zoomed-in canvas.
+   a phone, a laptop, and a zoomed-in canvas. The SVG overlay's `viewBox` is the
+   unit square, which means stored coordinates are the overlay's own coordinate
+   system — there is no projection code on the render path, and no
+   `ResizeObserver` anywhere in the project.
 2. **Writes never wait on the model.** Creating an annotation returns straight
    away with `enrichment_status = 'pending'`. Enrichment happens in a separate
    request and updates the row; the client watches for the change.
@@ -172,7 +175,7 @@ Notes on the things that actually bite, collected as we hit them.
 | 3 | Auth: sign up, sign in, protected routes, sessions | done |
 | 4 | Books: Open Library search, create, library view | done |
 | 5 | Pages: direct-to-storage upload, signed reads, page view | done |
-| 6 | Canvas layer: normalized coordinates, pins, resize and zoom | |
+| 6 | Canvas layer: normalized coordinates, pins, resize and zoom | done |
 | 7 | Enrichment: provider interface, pending, backoff, retry | |
 | 8 | Full-text search with tsvector and GIN | |
 | 9 | Deploy to Vercel and verify end to end | |

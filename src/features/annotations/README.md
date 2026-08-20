@@ -1,14 +1,59 @@
 # features/annotations
 
-A normalized rectangle on a page plus the user's comment, and the passage and
-context a vision model extracted from that rectangle.
+A normalized rectangle on a page, the user's note, and whatever the vision model
+reads inside that rectangle.
 
-Two rules define this feature:
+```
+annotations.types.ts        Annotation, NormalizedRect, EnrichmentResult
+annotations.schema.ts       zod bounds for the rectangle and the create input
+annotations.repository.ts   every query against the annotations table
+annotations.service.ts      createAnnotation, with the page ownership check
+annotations.actions.ts      createAnnotationAction, a Server Function
+components/
+  annotation-canvas.tsx     the image, the SVG overlay, the pointer maths
+  page-annotator.tsx        state: selection, draft rectangle, zoom
+```
 
-- Coordinates are always floats in `0.0..1.0`, relative to the page image's
-  intrinsic size. Raw pixels are never stored or passed across a boundary.
-- Creating an annotation never waits on the model. The write returns
-  immediately with `enrichment_status = 'pending'`; enrichment is a separate
-  request that updates the row.
+## Coordinates
 
-Built in phases 6 and 7.
+Every rectangle is four floats in `0.0..1.0`, relative to the page image's
+intrinsic size. Pixels are never stored and never cross a boundary.
+
+The rendering side needs no projection code at all, because the SVG overlay's
+`viewBox` is `0 0 1 1` — the unit square. A stored rectangle is written into the
+element unchanged:
+
+```
+row:  rect_x 0.2   rect_y 0.5   rect_width 0.3   rect_height 0.04
+DOM:  <rect x="0.2" y="0.5" width="0.3" height="0.04">
+```
+
+From that one choice:
+
+- **Resize needs no code.** There is no `ResizeObserver` anywhere in this
+  project. The browser re-projects the pins because they were never in pixels.
+- **Zoom needs no matrix.** Zoom sizes a wrapper element; panning is the scroll
+  container's own behaviour. 1x means the whole page fits, using a `max-width`
+  derived from the stored intrinsic dimensions, so nothing is measured. See
+  DECISIONS 0032 and 0036.
+- **Only one place converts screen to image**, and it is four lines in
+  `annotation-canvas.tsx`. `getBoundingClientRect()` reports the painted box, so
+  it is already correct under zoom and scroll.
+
+Two details that look like fussiness and are not:
+
+- `preserveAspectRatio="none"` — x and y must scale independently, because a
+  normalized x is a fraction of width and a normalized y is a fraction of
+  height.
+- `vector-effect="non-scaling-stroke"` — a stroke width in unit-square
+  coordinates would be about half the page wide.
+
+Labels are HTML positioned with percentages rather than SVG text, because
+non-uniform scaling stretches glyphs. Same numbers, no distortion.
+
+## Writes never wait on the model
+
+`createAnnotation` returns as soon as the row is written. The row is born
+`enrichment_status = 'pending'` with `retry_count = 0`; nothing in this feature
+knows the vision model exists. Phase 7 picks pending rows up from a separate
+request and updates them.

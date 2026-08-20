@@ -2,18 +2,20 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { asBookId } from "@/db/ids";
+import { listAnnotationsForPage } from "@/features/annotations/annotations.repository";
+import { PageAnnotator } from "@/features/annotations/components/page-annotator";
 import { requireUser } from "@/features/auth/auth.session";
 import { findBook } from "@/features/books/books.repository";
 import { listPagesForBook } from "@/features/pages/pages.repository";
 import { createSignedRead } from "@/integrations/storage/storage.client";
 
 /**
- * A single page, full size.
+ * A single page and its annotations.
  *
- * This is the surface phase 6 builds on: the annotation layer needs the image
- * displayed at a known intrinsic size, so both dimensions are rendered onto the
- * element here. Every annotation rectangle will be a fraction of those numbers,
- * never a pixel offset into whatever the browser happened to lay out.
+ * Everything below the fetch is normalized: the annotator receives coordinates
+ * as fractions and the image's intrinsic dimensions, and never learns how large
+ * the image is being displayed. That is what lets the same row render correctly
+ * on a phone, on a laptop, and at 3x zoom.
  */
 export default async function PageView({
   params,
@@ -29,9 +31,9 @@ export default async function PageView({
     notFound();
   }
 
-  // Page numbers are unique within a book, so the number in the URL is enough
-  // to identify one. Looking it up through the book's own scoped list means
-  // there is no second place where ownership has to be checked.
+  // Page numbers are unique within a book, so the number in the URL identifies
+  // one. Looking it up through the book's own scoped list means there is no
+  // second place where ownership has to be checked.
   const pages = await listPagesForBook(user.id, book.id);
   const parsedNumber = Number(pageNumber);
   const page = pages.find((candidate) => candidate.pageNumber === parsedNumber);
@@ -43,6 +45,8 @@ export default async function PageView({
   const index = pages.indexOf(page);
   const previous = index > 0 ? pages[index - 1] : undefined;
   const next = index < pages.length - 1 ? pages[index + 1] : undefined;
+
+  const annotations = await listAnnotationsForPage(user.id, page.id);
 
   let imageUrl: string | null = null;
 
@@ -83,23 +87,22 @@ export default async function PageView({
       </div>
 
       {imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={imageUrl}
-          alt={`Photograph of page ${page.pageNumber}`}
-          width={page.imageWidth}
-          height={page.imageHeight}
-          className="h-auto w-full rounded border border-ink-muted/20"
+        <PageAnnotator
+          pageId={page.id}
+          imageUrl={imageUrl}
+          imageWidth={page.imageWidth}
+          imageHeight={page.imageHeight}
+          annotations={annotations}
         />
       ) : (
         <p role="alert" className="text-sm text-red-600">
-          That image could not be loaded right now.
+          That image could not be loaded right now, so it cannot be annotated.
         </p>
       )}
 
       <p className="text-xs text-ink-muted">
-        {page.imageWidth} × {page.imageHeight} pixels. Annotations in phase 6
-        are stored as fractions of these dimensions.
+        {page.imageWidth} × {page.imageHeight} pixels. Annotation coordinates are
+        stored as fractions of these dimensions, never as pixels.
       </p>
     </main>
   );

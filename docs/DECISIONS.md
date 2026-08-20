@@ -656,3 +656,159 @@ a user — leaves its images behind. There is no delete UI yet, so nothing
 triggers it today. When one is added, deletion has to remove the object first
 and the row second, so a failure leaves a recoverable orphan rather than a row
 pointing at nothing.
+
+---
+
+## 0031 — The SVG viewBox is the unit square
+
+**Problem.** Annotations are stored as fractions of the page image's intrinsic
+size. Something has to turn those fractions into pixels on screen, and get it
+right again on every resize and at every zoom level.
+
+**Options.** (a) Absolutely positioned HTML boxes, with a `ResizeObserver`
+measuring the image and recomputing pixel offsets on every change. (b) A canvas
+element, redrawn on resize. (c) An SVG overlay whose `viewBox` is `0 0 1 1`.
+
+**Decision.** (c).
+
+**Why.** With a unit-square viewBox, the stored numbers *are* the SVG's
+coordinate system. A rectangle of `{x: 0.2, y: 0.5, width: 0.3, height: 0.04}`
+is written into the element unchanged, and this was verified from the outside:
+the rendered DOM contains `<rect x="0.2" y="0.5" width="0.3" height="0.04">`.
+
+The consequences are the whole argument:
+
+- Resizing re-projects every pin, and the browser does it. There is no
+  `ResizeObserver` in this codebase and no re-render on resize, because there is
+  nothing to recompute.
+- Zoom is the same story, which is why decision 0032 could be so cheap.
+- There is no projection code on the render path, so there is no projection code
+  on the render path to get wrong. The only screen-to-image conversion left is
+  the pointer handler, and it is four lines.
+
+`preserveAspectRatio="none"` is required and deliberate: x and y must scale
+independently, because a normalized x is a fraction of the width and a
+normalized y is a fraction of the height — different numbers of pixels.
+
+`vector-effect="non-scaling-stroke"` is what keeps outlines visible: a stroke
+width expressed in unit-square coordinates would be about half the page wide.
+
+---
+
+## 0032 — Zoom is container width; panning is the browser's
+
+**Problem.** The page needs to zoom, and a zoomed page needs panning. Both have
+to leave annotation coordinates correct.
+
+**Options.** (a) A CSS `transform: scale()` with a pan offset, tracking the
+transform matrix and inverting it for pointer maths. (b) Widen the container and
+let the container's own scrollbars do the panning.
+
+**Decision.** (b). Zoom sets `width: ${zoom * 100}%` on a wrapper; the scroll
+container handles the rest.
+
+**Why.** Option (a) means owning a transform matrix and inverting it correctly
+on every pointer event — the classic source of "the pin lands slightly off when
+zoomed". Option (b) has no matrix at all: `getBoundingClientRect()` already
+reports the painted box, so dividing by it is correct at any zoom and any scroll
+offset. The pointer handler does not know the zoom level and does not need to.
+
+It is also better behaviour for free — momentum scrolling, keyboard scrolling,
+scrollbars, and touch panning all come from the platform.
+
+---
+
+## 0033 — Shapes are SVG, labels are HTML
+
+**Problem.** `preserveAspectRatio="none"` scales x and y by different factors.
+That is right for rectangles and wrong for text: glyphs would be visibly
+stretched.
+
+**Options.** (a) SVG `<text>` inside the overlay, corrected with a counter
+transform. (b) Absolutely positioned HTML labels using percentage offsets.
+
+**Decision.** (b).
+
+**Why.** A percentage offset uses exactly the same normalized number the
+rectangle does — `left: ${x * 100}%` — so nothing is measured and nothing can
+drift out of alignment. Text stays upright and legible at any zoom. The counter
+transform in (a) would be more code to achieve less.
+
+---
+
+## 0034 — The annotation form is not progressively enhanced
+
+**Problem.** Decision 0014 chose Server Functions partly so forms work without
+JavaScript. `createAnnotationAction` takes a typed object and is called from
+client code instead, which gives that up.
+
+**Options.** (a) Keep the `FormData` shape and hidden inputs for consistency.
+(b) Call the Server Function directly with a typed argument.
+
+**Decision.** (b).
+
+**Why.** There is nothing to enhance from. The input is a rectangle dragged with
+a pointer; without JavaScript there is no rectangle. Keeping the form shape
+would be a ritual rather than a capability. Calling directly also lets the draft
+rectangle be cleared only after the write has actually succeeded, so a failure
+leaves the user's selection intact instead of making them draw it again.
+
+The argument is still parsed with Zod. A Server Function's parameters are
+deserialised from a request body, so a TypeScript type on them is a description,
+not a guarantee.
+
+---
+
+## 0035 — Verifying phase 6
+
+Not a fork, a receipt. Run on 2026-08-19 against the production build and the
+live project, with seeded users deleted afterwards:
+
+- An annotation created with `{x: 0.2, y: 0.5, width: 0.3, height: 0.04}` was
+  stored with those exact values — not rounded, not scaled.
+- The rendered page contained `viewBox="0 0 1 1"` and
+  `<rect x="0.2" y="0.5" width="0.3" height="0.04">`. **The stored value reaches
+  the DOM unchanged**, which is the claim decision 0031 is making.
+- No two-or-more digit coordinate appears anywhere in the overlay, so no pixel
+  value leaked into it.
+- The annotation was born `enrichment_status = 'pending'` with `retry_count = 0`
+  — the write did not wait on anything.
+- Rejected, each with its own message: **pixel values** (`expected number to be
+  <=1`), a rectangle past the right edge, zero width, and a negative origin.
+- Annotating another user's page returned "That page could not be found" — the
+  same answer as a page that does not exist.
+
+The pixel-value case is the one worth keeping. If a raw pixel coordinate ever
+reaches the boundary through some future bug, it is thousands of times larger
+than 1 and is refused loudly, rather than being stored and rendering a pin in an
+absurd place.
+
+---
+
+## 0036 — 1x zoom means the whole page, not the column width
+
+**Problem.** Decision 0032 made zoom set the wrapper's width, with 1x meaning
+"as wide as the column". Book pages are portrait, so on a real page that put
+about half the page below the fold at the default zoom, with no way to zoom out
+— 1x was the floor. Reported from an actual screenshot, not from a test.
+
+**Options.** (a) Add fractional steps below 1 (0.5, 0.75). (b) Redefine 1x as
+"the whole page fits", so there is nothing useful below it.
+
+**Decision.** (b). The wrapper keeps `width: zoom * 100%` and gains a
+`max-width` equal to the width at which the page is exactly `78vh * zoom` tall.
+Whichever limit binds first wins, so a portrait page is height-limited and a
+landscape spread is width-limited, and both fit at 1x.
+
+**Why.** Fractional steps would have left the same bad default one click away
+from the user, and "0.75x" means nothing to a reader — "the whole page" does.
+
+The part worth keeping is how the limit is computed. The aspect ratio comes from
+`image_width` and `image_height`, which are stored on the row and known before
+the image has even loaded, so the whole thing is one CSS `calc()` and nothing is
+measured from the DOM. The overlay stays aligned for the same reason it always
+did: the wrapper is still exactly the image's box.
+
+Verified on both shapes at a nominal 1000x900 viewport: a 1240x1754 page renders
+496x702 (height-limited), a 3024x1400 spread renders 1000x463 (width-limited),
+and the overlay stays pinned to the image box in both.
