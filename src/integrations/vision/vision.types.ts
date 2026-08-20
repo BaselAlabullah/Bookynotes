@@ -58,10 +58,34 @@ export class VisionPermanentError extends Error {
   }
 }
 
+export type TranscriptionResult = {
+  /** The whole page, as prose. Paragraphs separated by blank lines. */
+  text: string;
+  /**
+   * The page number printed on the page, as the model read it.
+   *
+   * Asked for as an integrity check, not for display. We already know which
+   * page the reader filed this as, so a disagreement is a signal that something
+   * is wrong — a mistyped page number, or a model that read the wrong thing.
+   * Empty when no number is printed, which is normal for a chapter opening.
+   */
+  printedPageNumber: string;
+};
+
 export type VisionProvider = {
   /** Name for logs and for telling the user which model produced a result. */
   readonly name: string;
+  /** One marked region: the passage inside it, and what surrounds it. */
   extract(request: ExtractionRequest): Promise<ExtractionResult>;
+  /**
+   * A whole page, as readable text.
+   *
+   * A separate method rather than `extract` with a different prompt, because
+   * the two differ in what they return, what they cost and how they fail. One
+   * reads a rectangle somebody drew; the other reads everything. Overloading a
+   * single method would have meant a result type that is half-empty either way.
+   */
+  transcribe(request: ExtractionRequest): Promise<TranscriptionResult>;
 };
 
 /**
@@ -86,3 +110,44 @@ Return JSON with exactly two fields:
   about the wider book.
 
 Respond with JSON only.`;
+
+/**
+ * What we ask for when transcribing a whole page.
+ *
+ * Two instructions matter more than the rest.
+ *
+ * **Rejoin hyphenated words.** Print breaks words across lines; a transcript
+ * that keeps "bro-\nken" is unsearchable and unreadable. This is the single
+ * most common way a naive page transcript is useless.
+ *
+ * **Do not tidy.** The temptation for a language model is to smooth the prose,
+ * modernise punctuation, or finish a sentence the page cut off. This app exists
+ * to record what a book says, so an improved sentence is a wrong one.
+ */
+export const TRANSCRIPTION_PROMPT = `You are transcribing a photograph of a page from a physical book.
+
+Return JSON with exactly two fields:
+
+- "printed_page_number": the page number printed on the page, as a string.
+  Use "" if no number is printed.
+- "text": everything printed on the page, transcribed verbatim.
+
+Rules:
+
+- Preserve the author's wording, spelling and punctuation exactly. Do not
+  modernise, correct, summarise or complete anything.
+- Rejoin words broken across a line by a hyphen, so "bro-" at the end of one
+  line and "ken" at the start of the next becomes "broken".
+- Separate paragraphs with a blank line. Do not keep the printed line breaks
+  inside a paragraph; the text will be reflowed.
+- Include the running head and page number if they are printed, each on their
+  own line.
+- If part of the page is unreadable, write [unclear] in its place rather than
+  guessing.
+- Transcribe only the page in the photograph. Ignore a facing page, a desk, or
+  anything held in shot.
+- Transcribe only what is visible. You may recognise the book; do not use
+  anything you remember about it. If the words in front of you differ from what
+  you expect, the words in front of you are correct.
+
+Respond with JSON only.`

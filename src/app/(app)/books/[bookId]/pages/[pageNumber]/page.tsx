@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { asBookId } from "@/db/ids";
 import { listAnnotationsForPage } from "@/features/annotations/annotations.repository";
-import { PageAnnotator } from "@/features/annotations/components/page-annotator";
+import { PageSurface } from "@/features/pages/components/page-surface";
 import { requireUser } from "@/features/auth/auth.session";
 import { findBook } from "@/features/books/books.repository";
 import { PageFilmstrip } from "@/features/pages/components/page-filmstrip";
@@ -91,7 +91,7 @@ export default async function PageView({
       <PageFilmstrip bookId={book.id} pages={pages} previewUrls={previewUrls} currentPageId={page.id} />
 
       {imageUrl ? (
-        <PageAnnotator
+        <PageSurface
           pageId={page.id}
           imageUrl={imageUrl}
           imageWidth={page.imageWidth}
@@ -100,6 +100,11 @@ export default async function PageView({
           initialSelectedId={selectedAnnotationId}
           previousHref={previousHref}
           nextHref={nextHref}
+          transcript={page.transcript}
+          transcriptStatus={page.transcriptStatus}
+          transcriptError={page.transcriptError}
+          pageNumber={page.pageNumber}
+          transcriptPageNumber={page.transcriptPageNumber}
         />
       ) : (
         <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">

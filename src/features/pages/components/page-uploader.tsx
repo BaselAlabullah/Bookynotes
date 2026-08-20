@@ -1,11 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { BookId } from "@/db/ids";
 
 import { apiErrorSchema, uploadTargetResponseSchema } from "../pages.schema";
+import {
+  CornerPicker,
+  DEFAULT_CORNERS,
+  type Corners,
+} from "./corner-picker";
 import { ACCEPTED_CONTENT_TYPES } from "../pages.storage-key";
 
 /** Matches the bucket's own limit, which is the one that actually holds. */
@@ -37,11 +42,37 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
   const router = useRouter();
   const [state, setState] = useState<UploadState>({ status: "idle" });
 
+  /**
+   * The chosen file and a preview URL for it, kept together so the URL is
+   * always the one belonging to the current file. The URL is created in the
+   * change handler rather than in an effect, because it is a consequence of an
+   * event and not something to be synchronised.
+   */
+  const [chosen, setChosen] = useState<{ file: File; url: string } | null>(null);
+  const [corners, setCorners] = useState<Corners>(DEFAULT_CORNERS);
+  const [straighten, setStraighten] = useState(true);
+
+  // Object URLs are a manual allocation: without this the blob stays in memory
+  // for the life of the tab.
+  useEffect(() => () => {
+    if (chosen) URL.revokeObjectURL(chosen.url);
+  }, [chosen]);
+
+  function chooseFile(file: File | null) {
+    setChosen((previous) => {
+      if (previous) URL.revokeObjectURL(previous.url);
+      return file ? { file, url: URL.createObjectURL(file) } : null;
+    });
+    // A new photograph means the old corners mean nothing.
+    setCorners(DEFAULT_CORNERS);
+    setState({ status: "idle" });
+  }
+
   async function upload(formData: FormData) {
-    const file = formData.get("file");
+    const file = chosen?.file;
     const pageNumberRaw = formData.get("pageNumber");
 
-    if (!(file instanceof File) || file.size === 0) {
+    if (!file || file.size === 0) {
       setState({ status: "error", message: "Choose an image first." });
       return;
     }
@@ -139,6 +170,10 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
           storageKey: target.data.storageKey,
           imageWidth: width,
           imageHeight: height,
+          // Omitted entirely when the reader does not want the page
+          // straightened, in which case the server falls back to trying to
+          // find the page itself.
+          ...(straighten ? { corners } : {}),
         }),
       });
 
@@ -154,6 +189,7 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
       }
 
       setState({ status: "idle" });
+      chooseFile(null);
       // The page list is server-rendered, so ask the server for it again rather
       // than trying to keep a client-side copy in step.
       router.refresh();
@@ -192,9 +228,58 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
             type="file"
             accept={ACCEPTED_CONTENT_TYPES.join(",")}
             required
+            onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
             className="text-sm"
           />
         </label>
+
+      </div>
+
+
+      {chosen ? (
+
+        <div className="flex flex-col gap-3">
+
+          <label className="flex items-center gap-2 text-xs uppercase tracking-[0.1em] text-ink-muted">
+
+            <input
+
+              type="checkbox"
+
+              checked={straighten}
+
+              onChange={(event) => setStraighten(event.target.checked)}
+
+              className="accent-accent"
+
+            />
+
+            Straighten the page
+
+          </label>
+
+
+          {straighten ? (
+
+            <CornerPicker
+
+              imageUrl={chosen.url}
+
+              corners={corners}
+
+              onChange={setCorners}
+
+            />
+
+          ) : null}
+
+        </div>
+
+      ) : null}
+
+
+      <div className="flex flex-wrap items-end gap-3">
+
 
         <button
           type="submit"

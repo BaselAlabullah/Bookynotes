@@ -1,0 +1,1 @@
+ALTER TABLE "pages" ADD COLUMN "transcript_page_number" text;

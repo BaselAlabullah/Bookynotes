@@ -22,6 +22,35 @@ export const uploadTargetSchema = z.object({
 });
 
 /**
+ * A point on the page, as fractions of the image's intrinsic size.
+ *
+ * The same 0..1 space every annotation rectangle uses. A pixel value arriving
+ * here would be far greater than 1 and refused at the boundary rather than
+ * stored — the discipline from DECISIONS 0031, applied to a second kind of
+ * coordinate.
+ */
+const normalizedPointSchema = z.object({
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+});
+
+/**
+ * The page corners the reader placed by hand.
+ *
+ * Exactly four, in any order: they are sorted into top-left, top-right,
+ * bottom-right, bottom-left by the processor, because dragging handles produces
+ * whatever order the user happened to touch them in.
+ */
+export const pageCornersSchema = z.tuple([
+  normalizedPointSchema,
+  normalizedPointSchema,
+  normalizedPointSchema,
+  normalizedPointSchema,
+]);
+
+export type PageCorners = z.infer<typeof pageCornersSchema>;
+
+/**
  * Step two: the file is uploaded, record the page.
  *
  * `imageWidth` and `imageHeight` are measured by the browser, because the app
@@ -42,6 +71,13 @@ export const completeUploadSchema = z.object({
   storageKey: z.string().min(1).max(300),
   imageWidth: z.number().int().positive().max(50_000),
   imageHeight: z.number().int().positive().max(50_000),
+
+  /**
+   * Where the reader says the page is. Optional: without it the processor
+   * falls back to finding the page itself, which works for a flat page on a
+   * contrasting surface and not much else.
+   */
+  corners: pageCornersSchema.optional(),
 });
 
 export type UploadTargetInput = z.infer<typeof uploadTargetSchema>;

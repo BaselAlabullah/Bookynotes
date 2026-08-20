@@ -1,8 +1,21 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, pgTable, text, unique, uuid } from "drizzle-orm/pg-core";
+import {
+  check,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 import type { BookId, PageId } from "@/db/ids";
 
+/** A point on the page, as fractions of the image's intrinsic size. */
+type Point = { x: number; y: number };
+
+import { enrichmentStatus } from "./annotations";
 import { books } from "./books";
 import { primaryId, timestamps, userIdColumn } from "./shared-columns";
 
@@ -40,12 +53,67 @@ export const pages = pgTable(
     imageHeight: integer("image_height").notNull(),
 
     /**
+     * The four page corners the reader placed by hand, as fractions of the
+     * *uploaded* photograph.
+     *
+     * Kept for the same reason `original_storage_key` is: with both, the
+     * flattening can be redone or adjusted without asking anybody to drag the
+     * handles again. Null when the corners were detected automatically, or when
+     * nothing was flattened at all.
+     *
+     * Normalized, like every other coordinate in this project. Pixels are never
+     * stored - see DECISIONS 0031.
+     */
+    pageCorners: jsonb("page_corners").$type<[Point, Point, Point, Point]>(),
+
+    /**
+     * The photograph exactly as it was uploaded, when the page-processor has
+     * replaced it with a flattened version.
+     *
+     * Null means `storage_key` *is* the original — either the processor was not
+     * running, or it could not find a page in the picture. Keeping the source
+     * means the flattening can be re-run later with a better detector, and that
+     * a bad rectification is recoverable rather than permanent.
+     */
+    originalStorageKey: text("original_storage_key"),
+
+    /**
      * A small derived copy, for grids and filmstrips. Nullable because it is
      * generated after the upload and that generation is allowed to fail: a
      * missing thumbnail costs bandwidth, a missing page costs the annotation.
      * Readers fall back to the full image.
      */
     thumbnailStorageKey: text("thumbnail_storage_key"),
+
+    /**
+     * The whole page as readable text, produced by the vision model.
+     *
+     * Null until somebody asks for it. Transcription is a separate request from
+     * the upload for the same reason enrichment is (DECISIONS 0025): a write
+     * must never wait on a model, and a page is perfectly usable without one.
+     *
+     * The photograph stays canonical. This is a second view of the same page,
+     * never a replacement — a transcript is what a model *believed* it read, and
+     * the picture is the only thing that can settle an argument about a name or
+     * an unusual word.
+     */
+    transcript: text("transcript"),
+
+    /** Reuses the annotation lifecycle enum: the three states are the same. */
+    transcriptStatus: enrichmentStatus("transcript_status"),
+
+    /** Why the last attempt failed, for a user-visible retry. */
+    transcriptError: text("transcript_error"),
+
+    /**
+     * The page number the model read off the page, when transcribing.
+     *
+     * An integrity check, not a display value. We already know which page the
+     * reader filed this as; a disagreement means either a mistyped page number
+     * or a model that read something other than what is in front of it. Neither
+     * is worth failing over, and both are worth saying out loud.
+     */
+    transcriptPageNumber: text("transcript_page_number"),
 
     ...timestamps,
   },

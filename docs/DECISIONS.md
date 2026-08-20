@@ -1577,3 +1577,402 @@ starting with a letter. A username has to be typed, said aloud, and possibly put
 in a URL one day. The test that made the case for it: `Ьasel`, whose first
 character is a Cyrillic soft sign rather than a Latin B, is rejected. Allowing
 unicode would let one person wear another's name.
+
+---
+
+## 0064 — One Python service, for the one thing Python is better at
+
+**Problem.** Photographs of book pages are pictures of *quadrilaterals*: the page
+recedes, the camera is never square on, and every printed line arrives slanted
+and unevenly lit. The original suggestion was to have a language model return a
+"scanned" version of the page.
+
+**Options.** (a) An image model regenerating the page. (b) OpenCV in a small
+Python service. (c) A WebAssembly build of OpenCV in the browser. (d) Rewrite
+the project in Python.
+
+**Decision.** (b). One FastAPI service, one endpoint, in `page-processor/`.
+
+**Why not (a).** It fails twice over. Image models *redraw* rather than clean, so
+on a page of prose they silently alter words — fatal for an app whose purpose is
+recording what a book actually says. And a regenerated image has different
+geometry, so every annotation anchored to the original would point somewhere
+else. That is the one invariant the whole project rests on (0031).
+
+**Why not (d).** The annotation canvas — pointer capture, normalized coordinate
+maths, the SVG overlay — has to be TypeScript regardless. So the real choice was
+never "Python instead of" but "Python as well as", and the second runtime has to
+earn its place. Detecting a page outline and warping it flat is exactly what
+OpenCV is for, and unpleasant in the JavaScript ecosystem. That earns it.
+
+**Why not (c).** A WASM build would avoid the second process entirely, at the
+cost of shipping several megabytes of OpenCV to every visitor to run once per
+upload, on whatever phone took the photograph.
+
+The service holds no user data, has no database, and makes no authorization
+decisions — ownership is established before it is called. Its API key exists so
+that a process listening on a port cannot be used as free image processing by
+anything else that can reach it, which is a different and much smaller claim
+than authentication.
+
+---
+
+## 0065 — Flattening happens at upload, before the row exists
+
+**Problem.** Rectifying a page *changes its geometry*. Annotation rectangles are
+fractions of the image, so flattening an image that already has annotations
+would move every one of them.
+
+**Options.** (a) Rectify on demand, when a page is viewed. (b) Rectify at upload
+time, before the `pages` row is written. (c) Offer it as an action on an
+existing page.
+
+**Decision.** (b), inside `completeUpload`, between reading the uploaded bytes
+and inserting the row.
+
+**Why.** At that moment the page has no row, so it can have no annotations, so
+there is nothing anchored to the old geometry. It is the only point in the
+lifecycle where changing the image is provably safe. (a) and (c) both require
+answering "what happens to the existing marks?", and the honest answer is that
+they all move.
+
+The original photograph is kept in `pages.original_storage_key`, so a poor
+rectification is recoverable and a better detector could be re-run later. The
+canonical image becomes the flattened one, and everything downstream — the
+thumbnail, the crop sent to the vision model, the annotation canvas — sees only
+that.
+
+Two things fall out of doing it here:
+
+- **The bytes are read once.** Rectifying, the thumbnail and the dimensions all
+  used to fetch the object separately.
+- **The dimensions become ours.** When we produce the image, we know its real
+  size, which finally closes the client-reported-dimensions weakness recorded in
+  0028 — but *only* then. An untouched phone photo keeps the browser's numbers,
+  because sharp reads dimensions before EXIF rotation and the browser reports
+  them after, so "correcting" one would silently transpose a portrait page.
+
+---
+
+## 0066 — The processor is optional, and the app must not notice
+
+**Problem.** The service runs on a laptop. The app runs on Vercel. Most of the
+time the deployed app cannot reach it at all.
+
+**Options.** (a) Require it, and deploy it somewhere. (b) Make it optional, with
+the app degrading to storing photographs exactly as uploaded.
+
+**Decision.** (b). `PAGE_PROCESSOR_URL` unset means the feature does not exist
+and nothing else behaves differently.
+
+**Why.** A feature that only works when an extra process happens to be running
+must degrade to "the app as it was", or it is not optional — it is a dependency
+with an outage. Every failure path in `tryRectify` returns the upload unchanged:
+not configured, unreachable, timed out, refused the image, or looked and found
+no page. Verified both ways — with the service running the row carries a
+`.flat.jpg` canonical image, an original, and dimensions of 1198x1707; with it
+stopped the same upload produced a row with the photograph as canonical, a null
+original, and the browser's 1560x2060.
+
+The two variables must be set together or not at all, enforced in
+`env.server.ts`. A URL without a secret posts images to an unauthenticated
+endpoint; a secret without a URL is a configuration somebody abandoned halfway.
+
+---
+
+## 0067 — Verifying phase 10
+
+Not a fork, a receipt.
+
+**Unit tests** (`page-processor/tests/test_rectify.py`, 5 passing) build a flat
+page, warp it by a *known* perspective transform onto a dark desk under a
+lighting gradient, and grade the result against that ground truth rather than
+against an opinion: corner error under 2% of the image, restored aspect ratio
+within 5% of the original, corner ordering stable under any rotation or
+reversal of the input, a noise image returned untouched, and the lighting
+gradient measurably reduced.
+
+**End to end**, through `completeUpload` against the live database and bucket:
+
+```
+with the processor      canonical ...flat.jpg   original kept   1198 x 1707
+without the processor   canonical ...jpg        original null   1560 x 2060
+```
+
+**The result was looked at, not just asserted.** A trapezoidal page on a dark
+desk came back square, white and evenly lit, with the text straight.
+
+That inspection found something the tests did not: a thin dark frame around
+every page, because the edge detector finds the boundary *between* page and
+desk, so its outermost row of pixels is part desk. The quadrilateral is now
+pulled inwards by half a percent before the warp — under a pixel of real text —
+and measuring the edges afterwards showed the darkest strip at 232 against a
+page centre of 248, with no dark band.
+
+---
+
+## 0068 — The reader places the corners, because the detector cannot
+
+**Problem.** Automatic detection (0064) worked on synthetic tests and refused
+every real photograph it was given. The first one tried in anger — a paperback
+held open on a white desk — produced `X-Rectified: false, confidence 0.000`.
+
+Looking at the picture makes the reason obvious, and it is not a tuning problem:
+
+- The page **curves at the spine**, so its outline is not a quadrilateral at all.
+- The facing page is **cut off by the frame**.
+- A **thumb covers** one corner.
+- Cream paper on a white desk gives **almost no edge contrast**.
+
+The detector assumes a flat page with four findable edges on a contrasting
+background. People photograph books held open. The assumption, not the
+implementation, was wrong.
+
+**Options.** (a) Tell people to photograph pages flat on a dark surface.
+(b) Detect the text block instead of the page edge. (c) Let the reader place
+four corners by hand. (d) Cylindrical de-warping tuned for held books.
+
+**Decision.** (c).
+
+**Why not (a).** It is asking people to change how they read to suit the
+software. Rejected by the owner in one sentence, correctly.
+
+**Why not (b).** Tried, on the real photograph, before proposing anything. It
+merged both pages of the spread into a single block, took the minimum-area
+rectangle of the pair, rotated on the wrong axis and cut off the bottom of the
+page. Worse than doing nothing. Kept here because "we tried the obvious cheaper
+thing and it failed" is worth more than the assertion that it would.
+
+**Why not (d).** Text-line detection and curve fitting is a research project,
+not a phase.
+
+**Why (c).** There is nothing to detect, so there is nothing to fail. A person
+looking at the picture knows exactly where the page is, and dragging four
+handles takes a couple of seconds. It works on a held book, an occluded corner,
+a white-on-white desk — every case that defeats the detector.
+
+Automatic detection is kept and tried first when no corners are given, so a flat
+page on a contrasting surface still needs no dragging.
+
+**Details worth keeping:**
+
+- Corners are **normalized**, fractions of the image, in the same 0..1 space as
+  every annotation rectangle. Pixels are never stored (0031). The picker
+  positions handles in percentages over a unit-square SVG, so nothing measures
+  anything and it stays correct at any preview size.
+- They may arrive **in any order** — dragging produces whatever order the reader
+  touched them in. Both the browser and the service sort them with the same
+  sum/difference trick; the browser's copy only affects the outline drawn on
+  screen, which would otherwise render as a bowtie and look like a bug.
+- They are **stored on the row**, so the flattening can be redone or adjusted
+  without asking anyone to drag again. Same reason as `original_storage_key`.
+- Bad corners are **refused, not ignored**. A tap instead of a drag returns
+  `400 Those corners enclose almost nothing.` The reader placed them, so
+  silently substituting something else would be baffling.
+- The handles respond to **arrow keys**, because a drag-only control is unusable
+  without a pointer.
+
+**The limitation this does not remove.** The warp is a homography, so it undoes
+perspective and not curvature. A page bowing near the spine still bows. Fixing
+that is (d), and it is not worth it: the vision model already receives a
+cropped, greyscaled, contrast-normalised region (0039) and reads curved text
+perfectly well — the extraction on the very photograph that failed detection was
+verbatim correct.
+
+---
+
+## 0069 — Verifying manual corners
+
+Not a fork, a receipt. Eight Python tests pass, three of them new:
+
+- A page **deliberately given a background it cannot be distinguished from** —
+  so `rectify` gives up — comes out correctly flattened when corners are
+  supplied, with the original aspect ratio restored to within 5%.
+- Corners rotated into any of the four possible orders produce an identical
+  result.
+- Too few corners, a coordinate above 1, a negative coordinate, a non-pair, and
+  a tap rather than a drag are each refused rather than guessed at.
+
+End to end through the real `completeUpload`, using **the actual photograph that
+automatic detection had refused**:
+
+```
+with hand-placed corners   flattened (.flat.jpg)   original kept   corners stored   523 x 937
+without corners            the upload              original null   corners null     960 x 1280
+```
+
+And the result was looked at, not merely asserted: the desk, the facing page and
+the hand are gone, the page fills the frame, the lighting is even and the text is
+upright.
+
+---
+
+## 0070 — The reading view is text, not a picture of text
+
+**Problem.** The wish was a clean, even page to read and annotate — "like an
+e-book" — with the original photograph still available.
+
+**Options.** (a) Transcribe the page and render the text back into an image,
+which keeps every existing rectangle-and-coordinate mechanism working unchanged.
+(b) Render it as real HTML text.
+
+**Decision.** (b).
+
+**Why.** (a) would have *looked* like an e-book without being one. No selecting a
+sentence, no copying a quote, no resizing the type, nothing for a screen reader
+— having gone to the trouble of obtaining real text, it would have been flattened
+straight back into pixels.
+
+The cost of (b) is that annotations on it cannot be rectangles: a rectangle over
+reflowing text means nothing. They become text ranges, which is how every
+e-reader anchors a highlight and is arguably the better fit — a note attached to
+*the words* survives reflow and quotes exactly.
+
+So the two surfaces keep different anchors, which is honest rather than a
+compromise: the photograph has geometry and gets rectangles, the transcript has
+characters and will get ranges. The coordinate design stays live on the
+photograph instead of being replaced.
+
+**The photograph stays canonical.** A transcript is what a model believed it
+read. Names and unusual words are exactly where that goes wrong, and a cleanly
+typeset page hides the mistake rather than showing it. Switching back is one
+click, which is what makes trusting the transcript reasonable at all.
+
+Transcription runs in its own request and is cached on the row, for the same
+reasons as annotation enrichment (0025, 0043): a write never waits on a model,
+and a whole page is the most expensive single call this app makes.
+
+---
+
+## 0071 — Checking the transcript against the page number
+
+**Problem.** How does a reader know a clean transcript is a transcript of *this*
+page? The failure mode of a typeset page is that being wrong and being right
+look identical.
+
+**Decision.** Ask the model for the page number printed on the page, store it,
+and say so when it disagrees with the number the page was filed under.
+
+**Why.** It costs one extra field in a call already being made, and it catches
+two different problems with one check: a mis-typed page number at upload, and a
+model that transcribed something other than what was in front of it.
+
+It is a warning, never a refusal. A chapter opening often prints no number at
+all, and a reader is entitled to file a page however they like. Verified by
+filing a photograph of page 317 as page 999: the transcript was correct and the
+reading view said so — *"filed as page 999, but the page number printed on the
+photograph reads 317"*.
+
+---
+
+## 0072 — A false alarm, and what it cost
+
+Worth recording because the mistake was mine and it was nearly expensive.
+
+The first transcript of a real page came back beautifully formatted, correctly
+paragraphed, with hyphenation rejoined — and appeared to be **the wrong page
+entirely**. Page 327's prose against a photograph of page 317. None of the words
+visible in the picture were in it. It looked exactly like a model recognising a
+famous novel and reciting from memory instead of reading, which is the most
+dangerous possible failure for this feature, and I reported it as such.
+
+It was a test error. The query said `ORDER BY created_at DESC LIMIT 1`, and a new
+page had been uploaded while the test was being written. The model was handed
+page 327 and transcribed page 327 correctly. Re-run against explicitly named
+pages, both transcribed correctly and both reported their own printed page
+numbers.
+
+Two things worth keeping from it:
+
+- **"The most recent row" is not an identifier.** In a test that spans minutes
+  against a live database somebody else is using, it silently means a different
+  thing at the end than it did at the start. Name the row.
+- The check built in response — comparing the printed page number against the
+  filed one — turned out to be worth having anyway, which is the only reason
+  the hour was not wasted. It is exactly the guard that would have caught a real
+  hallucination, and it now catches mis-filed pages instead.
+
+---
+
+## 0073 — Verifying phase 11a
+
+Not a fork, a receipt. Tested against the live model and two real photographs of
+book pages:
+
+```
+page 317, as uploaded (960x1280)     printed number "317"   matches   1196 chars
+page 327, flattened   (1069x2134)    printed number "327"   matches   1638 chars
+filed as 999                          printed number "317"   MISMATCH WARNED
+second call on a transcribed page     cached in 415ms, model not called
+```
+
+Transcripts came back paragraphed with hyphenated line breaks rejoined, which is
+the single most common way a naive page transcript is unusable.
+
+One call returned `retryable` rather than a transcript, after a long run of
+experiments against a free tier limited to about fifteen requests a minute. That
+is the rate-limit path behaving correctly rather than a defect — it is recorded
+here because it is what the feature will do on a bad afternoon.
+
+---
+
+## 0074 — The model is chosen on quota, not on latency
+
+**Problem.** Transcription started failing with "rate limited". Investigating it
+produced a number that changed the whole picture:
+
+```
+limit: 20    quota: GenerateRequestsPerDayPerProjectPerModel-FreeTier
+```
+
+Twenty requests **per day** on `gemini-3.5-flash`. Not per minute. One
+afternoon of testing exhausts it, and an app that reads a page per upload and a
+region per annotation cannot live inside it.
+
+**What went wrong.** DECISIONS 0042 chose that model by measuring latency
+across candidates — carefully, with repeated trials — and never checked the
+quota. The measurement was real and the conclusion was useless, because it
+optimised the wrong axis. Free-tier quota is per model and per day, and it is
+the binding constraint; latency is a rounding error next to "you may do this
+twenty times".
+
+**Decision.** Default to `gemini-3.5-flash-lite`.
+
+**Why.** Tested on a real photograph of a book page, both models were
+*indistinguishable on quality*: every marker word present, the correct printed
+page number, hyphenation rejoined, output within a few characters of the same
+length. The lite model was also twice as fast — 1806ms against 3762ms.
+
+So the flash model bought nothing and cost the daily allowance. Lite models get
+a larger free allowance precisely because they are cheaper to run, which is the
+axis that matters here.
+
+**The general lesson, worth more than the model name.** When a limit is measured
+in requests per day, capability comparisons are decoration. Check what a tier
+permits before comparing what it can do.
+
+---
+
+## 0075 — "Try again shortly" was a lie half the time
+
+**Problem.** Every 429 produced the same message: *"The model is rate limited
+right now. Try again shortly."* For a per-minute limit that is true. For a
+per-day limit it is false and actively unhelpful — the reader waits, retries,
+sees the same message, and has no way to learn that the answer is "tomorrow".
+
+**Decision.** Parse the quota violation Gemini returns in the response body and
+distinguish the two.
+
+Gemini does not put this in a header; it comes back as structured `details`
+containing a `quotaId` such as
+`GenerateRequestsPerDayPerProjectPerModel-FreeTier`, along with a `retryDelay`.
+`PerDay` in that id now produces:
+
+> Today's free quota for this model is used up. It resets tomorrow, or you can
+> point GEMINI_VISION_MODEL at a different model.
+
+which is both true and actionable — the quota is per model, so switching models
+grants a fresh allowance immediately.
+
+Verified against a genuinely exhausted quota rather than a simulated one: the
+`PerDay` id was present, the branch fired, and the message was the second one.

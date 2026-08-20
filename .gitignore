@@ -12,3 +12,10 @@ next-env.d.ts
 
 .DS_Store
 .vercel/
+
+# page-processor (Python). The virtualenv is machine-specific and large;
+# requirements.txt is what is checked in.
+page-processor/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

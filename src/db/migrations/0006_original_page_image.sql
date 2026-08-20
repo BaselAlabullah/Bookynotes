@@ -1,0 +1,1 @@
+ALTER TABLE "pages" ADD COLUMN "original_storage_key" text;

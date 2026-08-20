@@ -13,7 +13,8 @@
     "db:studio": "drizzle-kit studio",
     "backfill:thumbnails": "node scripts/backfill-thumbnails.mjs",
     "backfill:covers": "node scripts/backfill-covers.mjs",
-    "username": "node scripts/set-username.mjs"
+    "username": "node scripts/set-username.mjs",
+    "pages": "node scripts/pages.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.4",

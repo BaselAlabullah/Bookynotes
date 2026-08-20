@@ -53,3 +53,14 @@ export function isStorageKeyOwnedBy(
     `^${userId}/${bookId}/[0-9a-f-]{36}\.(jpg|png|webp)$`,
   ).test(storageKey);
 }
+
+/**
+ * Where the flattened version of a page lives.
+ *
+ * Derived from the original key so the two can never point at different pages,
+ * and so the ownership prefix carries over unchanged: a flattened image sits
+ * under exactly the same user and book as the photograph it came from.
+ */
+export function flattenedKeyFor(storageKey: string): string {
+  return storageKey.replace(/\.[^./]+$/, "") + ".flat.jpg";
+}

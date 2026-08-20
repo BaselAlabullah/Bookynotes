@@ -9,6 +9,7 @@ import {
   VisionTransientError,
   type ExtractionRequest,
   type ExtractionResult,
+  type TranscriptionResult,
   type VisionProvider,
 } from "./vision.types";
 
@@ -60,6 +61,30 @@ const MAX_RATE_LIMIT_WAIT_MS = 3_000;
 const sleep = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+/** One marked region: the passage inside it, and what surrounds it. */
+export async function extractPassage(
+  request: ExtractionRequest,
+): Promise<ExtractionResult> {
+  return withRetries(() => provider.extract(request));
+}
+
+/**
+ * Transcribe a whole page.
+ *
+ * Same policy as extraction, and deliberately the same code path: the failures
+ * a vision provider produces do not depend on what you asked it for. A rate
+ * limit is a rate limit whether the request was a rectangle or a page.
+ *
+ * It is slower and more expensive per call than extraction, because the whole
+ * page goes up and a page of prose comes back — which is exactly why it runs in
+ * its own request and its result is cached on the row.
+ */
+export async function transcribePage(
+  request: ExtractionRequest,
+): Promise<TranscriptionResult> {
+  return withRetries(() => provider.transcribe(request));
+}
+
 /**
  * Call the vision model, retrying only what is worth retrying.
  *
@@ -72,14 +97,12 @@ const sleep = (ms: number) =>
  * - `VisionRateLimitError` or `VisionTransientError` after the attempts are
  *   spent, for the caller to record as a retryable failure.
  */
-export async function extractPassage(
-  request: ExtractionRequest,
-): Promise<ExtractionResult> {
+async function withRetries<T>(call: () => Promise<T>): Promise<T> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     try {
-      return await provider.extract(request);
+      return await call();
     } catch (error) {
       if (error instanceof VisionPermanentError) {
         throw error;

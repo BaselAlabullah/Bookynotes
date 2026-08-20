@@ -59,10 +59,19 @@ const serverEnvSchema = z.object({
    *
    * Which models a key can reach varies by account and changes over time —
    * `gemini-2.5-flash` is still *listed* by the models endpoint but refuses new
-   * keys with a 404. Measured latency on a trivial request: 3.5-flash was
-   * consistently under two seconds, 3.6-flash swung between two and twelve.
+   * keys with a 404.
+   *
+   * The default is a *lite* model, and the reason is quota rather than speed.
+   * Free-tier limits are per model and per day, and they are small: measured on
+   * a real key, `gemini-3.5-flash` allows **twenty requests a day**, which one
+   * afternoon of testing exhausts. Choosing on latency alone — as an earlier
+   * version of this line did — picks a model the app cannot actually use.
+   *
+   * On transcription quality the two were indistinguishable: both read a real
+   * book page with every marker word correct, the right printed page number and
+   * hyphenation rejoined. The lite model was also twice as fast.
    */
-  GEMINI_VISION_MODEL: z.string().min(1).default("gemini-3.5-flash"),
+  GEMINI_VISION_MODEL: z.string().min(1).default("gemini-3.5-flash-lite"),
 
   /** openrouter.ai. The fallback provider. */
   OPENROUTER_API_KEY: z.string().min(1).optional(),
@@ -70,7 +79,29 @@ const serverEnvSchema = z.object({
     .string()
     .min(1)
     .default("meta-llama/llama-3.2-11b-vision-instruct:free"),
+
+  /**
+   * The page-processor service, if one is running.
+   *
+   * The only optional integration in the app. Unset — which it usually is on
+   * the deployed instance, because the service runs locally — page photographs
+   * are stored exactly as uploaded and nothing else behaves differently.
+   */
+  PAGE_PROCESSOR_URL: z.url().optional(),
+  PAGE_PROCESSOR_SECRET: z.string().min(16).optional(),
 }).superRefine((env, ctx) => {
+  // A URL without a secret would send images to an unauthenticated endpoint,
+  // and a secret without a URL is a configuration someone abandoned halfway.
+  // Neither is what anybody meant.
+  if (Boolean(env.PAGE_PROCESSOR_URL) !== Boolean(env.PAGE_PROCESSOR_SECRET)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["PAGE_PROCESSOR_URL"],
+      message:
+        "PAGE_PROCESSOR_URL and PAGE_PROCESSOR_SECRET must be set together, or neither.",
+    });
+  }
+
   // The key is required only for the provider actually selected. A missing key
   // for the provider you are not using is not an error, and demanding both
   // would mean signing up for an account you have no intention of using.

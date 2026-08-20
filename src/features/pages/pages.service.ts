@@ -2,6 +2,10 @@ import { isUniqueViolation } from "@/db/errors";
 import type { UserId } from "@/db/ids";
 import { findBook } from "@/features/books/books.repository";
 import {
+  isPageProcessorConfigured,
+  rectifyPage,
+} from "@/integrations/page-processor/page-processor.client";
+import {
   createSignedRead,
   createSignedUpload,
   objectExists,
@@ -13,6 +17,7 @@ import type { SignedUpload } from "@/integrations/storage/storage.types";
 import { insertPage } from "./pages.repository";
 import type { CompleteUploadInput, UploadTargetInput } from "./pages.schema";
 import { buildStorageKey, isStorageKeyOwnedBy } from "./pages.storage-key";
+import { flattenedKeyFor } from "./pages.storage-key";
 import { buildThumbnail, thumbnailKeyFor } from "./pages.thumbnail";
 import type { Page } from "./pages.types";
 
@@ -82,18 +87,42 @@ export async function completeUpload(
     return { status: "missing-object" };
   }
 
-  // Generated before the insert so the row is written complete. Failure is
-  // tolerated and recorded as null: a page without a thumbnail costs bandwidth,
-  // a failed upload costs the annotation the reader was about to make.
-  const thumbnailStorageKey = await tryBuildThumbnail(input.storageKey);
+  // The bytes are read once here and reused for everything that follows: the
+  // flattening, the thumbnail, and the dimensions. Each of those used to fetch
+  // the object separately.
+  const uploaded = await tryReadObject(input.storageKey);
+
+  if (!uploaded) {
+    return { status: "missing-object" };
+  }
+
+  // Flatten the page, if a processor is running. When it is not — the normal
+  // case on the deployed instance — `canonical` is simply what was uploaded and
+  // nothing downstream can tell the difference.
+  const canonical = await tryRectify(uploaded, input.storageKey, input.corners);
+
+  const thumbnailStorageKey = await tryBuildThumbnail(
+    canonical.bytes,
+    canonical.storageKey,
+  );
 
   try {
     const page = await insertPage(userId, {
       bookId: input.bookId,
       pageNumber: input.pageNumber,
-      storageKey: input.storageKey,
-      imageWidth: input.imageWidth,
-      imageHeight: input.imageHeight,
+      storageKey: canonical.storageKey,
+      originalStorageKey: canonical.originalStorageKey,
+      // Recorded only when the reader actually placed them and the flattening
+      // used them, so the row never claims corners that produced nothing.
+      pageCorners: canonical.originalStorageKey ? (input.corners ?? null) : null,
+      // Overridden only when we re-encoded the image ourselves. Left as the
+      // browser reported it otherwise, because sharp reads dimensions *before*
+      // EXIF rotation is applied and a browser reports them after — so
+      // "correcting" an untouched phone photo would silently transpose a
+      // portrait page. The processor's output carries no EXIF, so its numbers
+      // are unambiguous.
+      imageWidth: canonical.width ?? input.imageWidth,
+      imageHeight: canonical.height ?? input.imageHeight,
       thumbnailStorageKey,
     });
 
@@ -107,15 +136,100 @@ export async function completeUpload(
     // the database decide is what makes two simultaneous uploads of page 12
     // safe; a read-then-write check here would let both through.
     //
-    // The uploaded object now belongs to no row, so remove it rather than leave
-    // litter behind.
-    await removeObject(input.storageKey);
+    // Everything written for this page now belongs to no row, so remove all of
+    // it rather than leave litter behind.
+    const orphans = [
+      input.storageKey,
+      canonical.storageKey,
+      canonical.originalStorageKey,
+      thumbnailStorageKey,
+    ].filter((key): key is string => key !== null);
 
-    if (thumbnailStorageKey) {
-      await removeObject(thumbnailStorageKey);
+    for (const key of new Set(orphans)) {
+      await removeObject(key);
     }
 
     return { status: "duplicate-page" };
+  }
+}
+
+/** Read an uploaded object back, or null when it cannot be read. */
+async function tryReadObject(storageKey: string): Promise<Buffer | null> {
+  try {
+    const signed = await createSignedRead(storageKey);
+    const response = await fetch(signed.url);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return Buffer.from(await response.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+type CanonicalImage = {
+  bytes: Buffer;
+  storageKey: string;
+  /** Set only when a flattened version replaced the upload. */
+  originalStorageKey: string | null;
+  /** Set only when we produced the bytes and therefore know their size. */
+  width: number | null;
+  height: number | null;
+};
+
+/**
+ * Flatten the page, or hand back what was uploaded.
+ *
+ * When the processor succeeds the flattened image becomes canonical and the
+ * photograph is kept beside it. Doing that *here* — before the row exists, and
+ * so before any annotation can exist — is what makes it safe. Changing the
+ * geometry of an image that already has rectangles anchored to it would move
+ * every one of them.
+ *
+ * Every failure path returns the upload unchanged. The processor not running is
+ * the ordinary case, not an error.
+ */
+async function tryRectify(
+  uploaded: Buffer,
+  storageKey: string,
+  corners?: readonly { x: number; y: number }[],
+): Promise<CanonicalImage> {
+  const untouched: CanonicalImage = {
+    bytes: uploaded,
+    storageKey,
+    originalStorageKey: null,
+    width: null,
+    height: null,
+  };
+
+  if (!isPageProcessorConfigured()) {
+    return untouched;
+  }
+
+  try {
+    const result = await rectifyPage(uploaded, "image/jpeg", corners);
+
+    // Null means unreachable or refused. `rectified: false` means it looked and
+    // found no page, so the picture came back cleaned but not warped — not
+    // worth a second object and a second key.
+    if (!result || !result.rectified) {
+      return untouched;
+    }
+
+    const flattenedKey = flattenedKeyFor(storageKey);
+    await uploadObject(flattenedKey, result.image, "image/jpeg");
+
+    return {
+      bytes: result.image,
+      storageKey: flattenedKey,
+      originalStorageKey: storageKey,
+      width: result.width,
+      height: result.height,
+    };
+  } catch {
+    return untouched;
   }
 }
 
@@ -127,18 +241,12 @@ export async function completeUpload(
  * enrichment makes (DECISIONS 0039), and it is confined to a single fetch on a
  * single request. Every read afterwards is cheaper for it.
  */
-async function tryBuildThumbnail(storageKey: string): Promise<string | null> {
+async function tryBuildThumbnail(
+  bytes: Buffer,
+  storageKey: string,
+): Promise<string | null> {
   try {
-    const signed = await createSignedRead(storageKey);
-    const response = await fetch(signed.url);
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const thumbnail = await buildThumbnail(
-      Buffer.from(await response.arrayBuffer()),
-    );
+    const thumbnail = await buildThumbnail(bytes);
     const thumbnailKey = thumbnailKeyFor(storageKey);
 
     await uploadObject(thumbnailKey, thumbnail, "image/jpeg");

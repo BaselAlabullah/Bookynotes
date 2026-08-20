@@ -54,3 +54,42 @@ and know nothing about a bucket, so a deleted page, book or user leaves its
 images behind. Nothing triggers this yet — there is no delete UI. When one is
 added, remove the object first and the row second, so a failure leaves a
 recoverable orphan rather than a row pointing at nothing.
+
+## Straightening a page
+
+The uploader shows a preview with four draggable handles before anything is
+sent. Those corners travel with the confirm request, and the page-processor
+warps to them without detecting anything.
+
+That is the primary path, not a fallback. Automatic detection assumes a flat
+page with four findable edges against a contrasting background; people
+photograph books held open, with a curved spine, a thumb across a corner and
+cream paper on a white desk. See DECISIONS 0068.
+
+The corners are normalized, like every other coordinate here, and stored on the
+row so the flattening can be redone without dragging them again. Uncheck
+"Straighten the page" and the photograph is stored exactly as taken.
+
+## Reading view
+
+Every page has two views, and they are genuinely different things rather than
+one thing rendered twice:
+
+| | anchor | what it is |
+| --- | --- | --- |
+| **Original** | normalized coordinates | the photograph. It cannot be wrong, because it is not an interpretation. |
+| **Reading** | (text ranges, next step) | the transcript. What a model believed it read. |
+
+The transcript is real reflowing text, not a picture of text — selectable,
+copyable, resizable, readable by a screen reader. Rendering it back into an
+image would have looked like an e-book without being one. See DECISIONS 0070.
+
+Transcription runs in its own request (`POST /api/pages/<id>/transcribe`) and is
+cached on the row, for the same reasons enrichment is: a write never waits on a
+model, and a whole page is the most expensive call this app makes.
+
+**The integrity check.** The model is also asked for the page number printed on
+the page. When that disagrees with the number the page was filed under, the
+reading view says so. It catches a mis-typed page number and a model reading the
+wrong thing with the same test, and it costs one field in a call already being
+made. See DECISIONS 0071 — and 0072 for the false alarm that prompted it.

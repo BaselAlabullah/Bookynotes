@@ -2,11 +2,13 @@ import { z } from "zod";
 
 import {
   EXTRACTION_PROMPT,
+  TRANSCRIPTION_PROMPT,
   VisionPermanentError,
   VisionRateLimitError,
   VisionTransientError,
   type ExtractionRequest,
   type ExtractionResult,
+  type TranscriptionResult,
   type VisionProvider,
 } from "./vision.types";
 
@@ -32,6 +34,18 @@ const extractionSchema = z.object({
   context: z.string(),
 });
 
+const transcriptionSchema = z
+  .object({
+    text: z.string(),
+    // Snake case on the wire because that is what the prompt asks for; renamed
+    // here so the shape crossing the interface reads like the rest of the app.
+    printed_page_number: z.string().default(""),
+  })
+  .transform((value) => ({
+    text: value.text,
+    printedPageNumber: value.printed_page_number,
+  }));
+
 export function createOpenRouterProvider(
   apiKey: string,
   model: string,
@@ -41,62 +55,13 @@ export function createOpenRouterProvider(
     name: `openrouter:${model}`,
 
     async extract(request: ExtractionRequest): Promise<ExtractionResult> {
-      let response: Response;
-
-      try {
-        response = await fetch(ENDPOINT, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-            // OpenRouter uses these to attribute traffic. On the free tier they
-            // are also what stops your requests being treated as anonymous
-            // scraping.
-            "HTTP-Referer": appUrl,
-            "X-Title": "Marginalia",
-          },
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-          body: JSON.stringify({
-            model,
-            temperature: 0,
-            // Not every free vision model honours a schema, so the format is
-            // requested loosely and the result is validated strictly below.
-            response_format: { type: "json_object" },
-            messages: [
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: EXTRACTION_PROMPT },
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: `data:${request.mimeType};base64,${request.image.toString("base64")}`,
-                    },
-                  },
-                ],
-              },
-            ],
-          }),
-        });
-      } catch (cause) {
-        throw new VisionTransientError("OpenRouter did not respond in time.", {
-          cause,
-        });
-      }
-
-      if (!response.ok) {
-        throw await classifyFailure(response);
-      }
-
-      const body: unknown = await response.json();
-      const parsed = openRouterResponseSchema.safeParse(body);
-      const content = parsed.success
-        ? parsed.data.choices?.[0]?.message.content
-        : null;
-
-      if (!content) {
-        throw new VisionTransientError("OpenRouter returned no content.");
-      }
+      const content = await callOpenRouter(
+        apiKey,
+        model,
+        appUrl,
+        request,
+        EXTRACTION_PROMPT,
+      );
 
       const extraction = extractionSchema.safeParse(safeJsonParse(content));
 
@@ -108,7 +73,103 @@ export function createOpenRouterProvider(
 
       return extraction.data;
     },
+
+    async transcribe(
+      request: ExtractionRequest,
+    ): Promise<TranscriptionResult> {
+      const content = await callOpenRouter(
+        apiKey,
+        model,
+        appUrl,
+        request,
+        TRANSCRIPTION_PROMPT,
+      );
+
+      const transcription = transcriptionSchema.safeParse(
+        safeJsonParse(content),
+      );
+
+      if (!transcription.success) {
+        throw new VisionTransientError(
+          "OpenRouter's JSON did not match the requested shape.",
+        );
+      }
+
+      return transcription.data;
+    },
   };
+}
+
+/**
+ * One request to OpenRouter, shared by both methods.
+ *
+ * They differ only in the prompt, so the transport lives here rather than being
+ * written out twice.
+ */
+async function callOpenRouter(
+  apiKey: string,
+  model: string,
+  appUrl: string,
+  request: ExtractionRequest,
+  prompt: string,
+): Promise<string> {
+  let response: Response;
+
+  try {
+    response = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        // OpenRouter uses these to attribute traffic. On the free tier they are
+        // also what stops your requests being treated as anonymous scraping.
+        "HTTP-Referer": appUrl,
+        "X-Title": "Marginalia",
+      },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        // Not every free vision model honours a schema, so the format is
+        // requested loosely and the result is validated strictly by the caller.
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${request.mimeType};base64,${request.image.toString("base64")}`,
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    });
+  } catch (cause) {
+    throw new VisionTransientError("OpenRouter did not respond in time.", {
+      cause,
+    });
+  }
+
+  if (!response.ok) {
+    throw await classifyFailure(response);
+  }
+
+  const body: unknown = await response.json();
+  const parsed = openRouterResponseSchema.safeParse(body);
+  const content = parsed.success
+    ? parsed.data.choices?.[0]?.message.content
+    : null;
+
+  if (!content) {
+    throw new VisionTransientError("OpenRouter returned no content.");
+  }
+
+  return content;
 }
 
 async function classifyFailure(response: Response): Promise<Error> {

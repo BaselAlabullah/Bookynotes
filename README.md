@@ -51,7 +51,11 @@ Four ideas carry most of the design:
    request and updates the row; the client watches for the change.
 3. **Enrichment is cached on the row.** The same region is never sent to the
    model twice — which is what makes a free tier survivable.
-4. **The storage bucket is private.** Uploads use a signed URL issued by the
+4. **Every page has two views.** The photograph, with rectangles anchored to
+   normalized coordinates, and a reading view of the page as real reflowing
+   text. The photograph stays canonical: a transcript is what a model believed
+   it read, and switching back to check is one click.
+5. **The storage bucket is private.** Uploads use a signed URL issued by the
    backend and go browser → Supabase directly. Reads use short-lived signed
    URLs. Image bytes never transit the app server.
 
@@ -85,9 +89,15 @@ Requires Node 22+.
 
 ```bash
 npm install
-cp .env.example .env.local   # then fill in the phase 1 values
+cp .env.example .env.local   # then fill it in
 npm run dev                  # http://localhost:3000
 ```
+
+On Windows, `run.bat` starts both halves at once — the Next app and the optional
+`page-processor` — each in its own window, creating the Python virtualenv on
+first run. It reads the processor's secret from `.env.local` so there is one
+copy of it rather than two, and skips the processor entirely if it is not
+configured.
 
 Checks:
 
@@ -134,6 +144,35 @@ the foreign keys added by `0001_auth_user_foreign_keys.sql`. See
 
 The app refuses to start if a required environment variable is missing or
 malformed, by design — see `src/config/env.public.ts`.
+
+## The page-processor (optional)
+
+`page-processor/` is a small FastAPI service that flattens the perspective out
+of a photographed page and evens its lighting. It is the one Python component,
+and it is Python for one reason: OpenCV.
+
+```
+photograph of a tilted, unevenly lit page
+        |  POST /rectify
+        v
+flat, square, evenly lit page  ->  becomes the canonical image
+                                   the photograph is kept alongside it
+```
+
+You drag four handles onto the page corners before uploading, and it warps to
+those. Automatic detection is tried when you don't — but it needs a flat page on
+a contrasting surface, and a book held open rarely gives it one, so the handles
+are the primary path rather than a fallback (DECISIONS 0068).
+
+It runs at **upload time, before the page row exists**, which is the only moment
+changing an image's geometry is safe — nothing can be anchored to it yet.
+Annotations are fractions of the image, so flattening a page that already had
+marks would move every one of them.
+
+**It is entirely optional.** Leave `PAGE_PROCESSOR_URL` unset and photographs are
+stored exactly as uploaded, with nothing else behaving differently. That is how
+the deployed instance runs. See `page-processor/README.md` to run it, and
+DECISIONS 0064-0067 for why it exists in this shape.
 
 ## Deployment
 
@@ -249,6 +288,12 @@ Notes on the things that actually bite, collected as we hit them.
 - **Vercel meters optimised images on the free tier.** Book covers are rendered
   with a plain `<img>` rather than `next/image`: they are already small and
   already on Open Library's CDN, so re-optimising them spends quota for nothing.
+- **Vision free-tier quota is per model and PER DAY, and it is small.** Measured
+  on a real key, `gemini-3.5-flash` allows **20 requests a day** — one afternoon
+  of testing exhausts it. The default is `gemini-3.5-flash-lite`, chosen for
+  that reason rather than for speed; on transcription quality the two were
+  indistinguishable. Because the quota is per model, switching
+  `GEMINI_VISION_MODEL` grants a fresh allowance immediately.
 - **Vision APIs are rate limited per minute and per day.** Free-tier 429s are
   routine, not exceptional. They are handled explicitly with backoff, and a
   terminal failure surfaces a retry button rather than disappearing. A rate
@@ -286,5 +331,5 @@ Notes on the things that actually bite, collected as we hit them.
 | 7 | Enrichment: provider interface, pending, backoff, retry | done |
 | 8 | Full-text search with tsvector and GIN | done |
 | 8.5 | Aesthetic overhaul before anything is public | done |
-| 9 | Deploy to Vercel and verify end to end | |
-| 10 | Python page-processor: rectify and clean page photographs | |
+| 9 | Deploy to Vercel and verify end to end | done |
+| 10 | Python page-processor: rectify and clean page photographs | done |
