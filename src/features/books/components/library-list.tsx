@@ -30,20 +30,22 @@ export function LibraryList({ books }: { books: Book[] }) {
       {books.map((book) => (
         <li
           key={book.id}
-          className="flex items-start gap-4 rounded-lg border border-ink-muted/15 p-4"
+          className="rounded-lg border border-ink-muted/15 transition-colors hover:border-accent/50"
         >
-          <BookCover url={book.coverUrl} title={book.title} />
+          <Link href={`/books/${book.id}`} className="flex items-start gap-4 p-4">
+            <BookCover url={book.coverUrl} title={book.title} />
 
-          <div className="flex flex-col gap-1">
-            <h2 className="font-serif text-lg">{book.title}</h2>
-            <p className="text-sm text-ink-muted">{book.author}</p>
-            {book.series ? (
-              <p className="text-xs text-ink-muted">
-                {book.series}
-                {book.seriesIndex === null ? "" : ` #${book.seriesIndex}`}
-              </p>
-            ) : null}
-          </div>
+            <div className="flex flex-col gap-1">
+              <h2 className="font-serif text-lg">{book.title}</h2>
+              <p className="text-sm text-ink-muted">{book.author}</p>
+              {book.series ? (
+                <p className="text-xs text-ink-muted">
+                  {book.series}
+                  {book.seriesIndex === null ? "" : ` #${book.seriesIndex}`}
+                </p>
+              ) : null}
+            </div>
+          </Link>
         </li>
       ))}
     </ul>

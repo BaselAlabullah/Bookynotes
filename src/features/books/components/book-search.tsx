@@ -2,14 +2,11 @@
 
 import { useActionState, useEffect, useState } from "react";
 
-import {
-  apiErrorSchema,
-  bookSearchResponseSchema,
-} from "@/integrations/open-library/open-library.schema";
+import { bookSearchResponseSchema } from "@/integrations/open-library/open-library.schema";
 import type { BookSearchResult } from "@/integrations/open-library/open-library.types";
 
 import { addBookAction } from "../books.actions";
-import { emptyAddBookState } from "../books.schema";
+import { apiErrorSchema, emptyAddBookState } from "../books.schema";
 import { BookCover } from "./book-cover";
 
 /** Long enough that a typist does not fire a request per keystroke, short

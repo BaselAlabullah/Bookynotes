@@ -48,6 +48,3 @@ export const bookSearchResultSchema = z.object({
 export const bookSearchResponseSchema = z.object({
   results: z.array(bookSearchResultSchema),
 });
-
-/** The error envelope every route handler in this app returns on failure. */
-export const apiErrorSchema = z.object({ error: z.string() });

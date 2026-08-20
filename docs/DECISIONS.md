@@ -500,3 +500,159 @@ One thing the linter caught that is worth keeping: React's
 a too-short query. That was a genuine "you might not need an effect" — whether
 results are worth showing is derived from the query, not state to be kept in
 sync with it. The effect now does one thing: talk to the network.
+
+---
+
+## 0025 — Uploads are two requests, and the row is written last
+
+**Problem.** The browser uploads directly to Supabase, so the app server never
+sees the bytes and cannot know whether the upload worked. When does the `pages`
+row get written?
+
+**Options.** (a) Write the row first, hand back a signed URL, and let the client
+upload afterwards. (b) Hand back a signed URL, let the client upload, then have
+the client confirm and write the row.
+
+**Decision.** (b). `prepareUpload` writes nothing; `completeUpload` checks the
+object is really in the bucket, then inserts.
+
+**Why.** The two failure modes are not equal. With (a), an abandoned upload
+leaves a page row pointing at nothing, and every reader downstream has to cope
+with a page that cannot be displayed — a database that lies. With (b), the same
+abandonment leaves an unreferenced object in a bucket: invisible, harmless, and
+cheap to sweep. A `pages` row always means an image exists.
+
+`objectExists` before the insert is what makes that guarantee real. Without it,
+"the upload succeeded" would be the browser's unverified word.
+
+---
+
+## 0026 — The storage key starts with the owner's id
+
+**Problem.** In step two the client tells us "the file is at this path". That
+string is user input, and it decides which object a page row points at.
+
+**Options.** (a) Look the path up and check whoever owns it. (b) Make every key
+begin with `<userId>/<bookId>/` and reject anything that does not match.
+
+**Decision.** (b), in `pages.storage-key.ts`, checked in `completeUpload`.
+
+**Why.** Without the check, a signed-in user could point a page row of their own
+at another user's object and read it through our own signed-URL endpoint. With
+the prefix baked into the key, rejecting that is a string comparison against
+values we already trust, rather than a lookup that could be written wrong.
+
+The filename itself is random rather than derived from the page number, because
+page numbers get corrected and an object that has to be renamed when a row is
+edited eventually disagrees with its row.
+
+---
+
+## 0027 — Read URLs are signed per render and never stored
+
+**Problem.** The bucket is private, so every image needs a signed URL. Where
+does it come from?
+
+**Options.** (a) Sign long-lived URLs and store them on the page row. (b) Sign
+short-lived URLs at render time, every time.
+
+**Decision.** (b), five minutes, signed in parallel for a book's pages.
+
+**Why.** A stored URL is a durable public link to a private object: it works for
+anyone who obtains it, for as long as it lives, with no further authorization.
+Signing at render time means access is re-checked on every view by the code that
+already knows who is asking. This is also why `pages.storage_key` holds a path
+and not a URL — storing a URL would mean storing something that stops working.
+
+The signing is done with `Promise.all` and a failure for one page is swallowed
+into a "preview unavailable" tile, so one bad object costs one thumbnail rather
+than the whole book.
+
+---
+
+## 0028 — Image dimensions are reported by the browser
+
+**Problem.** Every annotation coordinate is a fraction of the page image's
+intrinsic size, so those two numbers matter more than anything else stored about
+a page. They are measured in the browser with `createImageBitmap` and sent to
+us.
+
+**Options.** (a) Verify server-side by downloading the object and reading its
+header. (b) Accept the client's numbers.
+
+**Decision.** (b), with positive-integer bounds in zod and `> 0` check
+constraints in Postgres.
+
+**Why.** Verifying means pulling the bytes through the app server, which undoes
+the entire reason for direct-to-storage upload and costs serverless execution
+time on a free tier. The blast radius of a lie is contained: wrong dimensions
+distort only that user's own annotations on their own page. Nobody else is
+affected, and no security property depends on the values.
+
+This is the weakest link in the coordinate design and is written down here so it
+is a known trade rather than a discovered surprise.
+
+---
+
+## 0029 — Duplicate page numbers are caught by the constraint, not a pre-check
+
+**Problem.** `(book_id, page_number)` is unique. What happens when someone
+uploads page 12 twice?
+
+**Options.** (a) Query for an existing page first and refuse if found.
+(b) Attempt the insert and handle the `23505` unique violation.
+
+**Decision.** (b), in `pages.service.ts`, with the orphaned object removed on
+the way out.
+
+**Why.** A read-then-write check races: two uploads in flight at once both read
+"no page 12" and both proceed. The constraint cannot be raced, because the
+database decides. `db/errors.ts` exists to tell that expected outcome apart from
+a genuine failure, so a duplicate becomes a sentence the user can act on rather
+than a 500.
+
+---
+
+## 0030 — Verifying phase 5, and the two bugs it found
+
+Not a fork, a receipt. The upload flow was run end to end on 2026-08-19 against
+the production build, the live Supabase project and the real `page-images`
+bucket, with a seeded user deleted afterwards:
+
+- Signed upload URL issued, file PUT **directly to Supabase**, page row written:
+  `201`.
+- Uploading page 12 twice: `409 "Page 12 already exists in this book."`
+- Confirming a key that was never uploaded: `409 "That upload did not finish."`
+- The page view rendered a signed `<img>` whose URL served real image bytes.
+- The **same object without its signature: `400`.** The bucket is genuinely
+  private; the signature is doing the work.
+- The orphan sweep was verified directly rather than inferred: two objects
+  existed immediately after the duplicate's upload, one object and one page row
+  remained after its confirm was rejected.
+
+Two real bugs, neither of which a passing build or a type check would have
+found:
+
+**Drizzle wraps driver errors.** `isUniqueViolation` looked at `error.code`, but
+Drizzle raises a `DrizzleQueryError` carrying the SQL and parameters and hangs
+the driver's error off `.cause`. The code was `undefined` at the top level, so
+every constraint violation fell through as a 500 with an empty body instead of a
+409. It now walks the cause chain to a bounded depth.
+
+**A missing object is an answer, not a failure.** Supabase's `exists()` returns
+`data: false` *with* an error attached, because the underlying HEAD answers 400.
+Treating any error as a failure turned "that upload did not finish" into
+"storage is not responding" — telling the user to wait when they should retry.
+`objectExists` now distinguishes a 400/404 from a real outage.
+
+Both bugs lived on the error paths, which is exactly where a happy-path demo
+never looks.
+
+### A known gap, recorded rather than fixed
+
+Deleting a page row does not delete its object. `ON DELETE CASCADE` governs rows
+in Postgres and knows nothing about a bucket, so removing a page — or a book, or
+a user — leaves its images behind. There is no delete UI yet, so nothing
+triggers it today. When one is added, deletion has to remove the object first
+and the row second, so a failure leaves a recoverable orphan rather than a row
+pointing at nothing.

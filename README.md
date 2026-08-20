@@ -8,9 +8,9 @@ pulls out the surrounding context, so the note is stored with the text it refers
 to rather than with a page number. Everything you have ever marked is then
 searchable across your whole library.
 
-> Status: phase 4 of 9. You can sign up, search Open Library, add books, and see
-> your library. Page photographs arrive next. Phases are tracked at the bottom of
-> this file.
+> Status: phase 5 of 9. You can sign up, add books from Open Library, upload
+> photographs of their pages, and view them. Annotations arrive next. Phases are
+> tracked at the bottom of this file.
 
 ## Architecture
 
@@ -93,6 +93,14 @@ npm run lint
 npm run build
 ```
 
+### Storage
+
+Phase 5 needs a private bucket and the Supabase **secret key**
+(`sb_secret_...`, formerly `service_role`) in `SUPABASE_SECRET_KEY`. The bucket
+`page-images` is private, capped at 10 MB per object and limited to JPEG, PNG
+and WebP; those limits are set on the bucket itself, because the app server
+never sees the bytes and so cannot enforce them.
+
 ### Database
 
 Create a free Supabase project (no card required), then from
@@ -163,7 +171,7 @@ Notes on the things that actually bite, collected as we hit them.
 | 2 | Supabase, schema, Drizzle migrations, scoped data access | done |
 | 3 | Auth: sign up, sign in, protected routes, sessions | done |
 | 4 | Books: Open Library search, create, library view | done |
-| 5 | Pages: direct-to-storage upload, signed reads, page view | |
+| 5 | Pages: direct-to-storage upload, signed reads, page view | done |
 | 6 | Canvas layer: normalized coordinates, pins, resize and zoom | |
 | 7 | Enrichment: provider interface, pending, backoff, retry | |
 | 8 | Full-text search with tsvector and GIN | |

@@ -51,3 +51,10 @@ export const emptyAddBookState: AddBookState = {
   error: null,
   addedTitle: null,
 };
+
+/**
+ * The envelope this feature's route handler returns on failure. Declared next
+ * to the endpoint it describes rather than in a shared bag of API types, so it
+ * can change with the endpoint.
+ */
+export const apiErrorSchema = z.object({ error: z.string() });
