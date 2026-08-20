@@ -10,6 +10,16 @@ type AnnotationCanvasProps = {
   imageHeight: number;
   /** 1 = fit to column. Scrolling the container is how panning happens. */
   zoom: number;
+  /**
+   * Render the photograph as if it had been scanned: grayscale with the
+   * contrast pushed up.
+   *
+   * This is a display filter and nothing more. It changes no pixel geometry, so
+   * every stored coordinate stays valid — which is exactly why it is done in
+   * CSS rather than by producing a "cleaned" image, which would move the page
+   * out from under its own annotations.
+   */
+  scanView: boolean;
   annotations: Annotation[];
   draft: NormalizedRect | null;
   selectedId: string | null;
@@ -66,6 +76,7 @@ export function AnnotationCanvas({
   imageWidth,
   imageHeight,
   zoom,
+  scanView,
   annotations,
   draft,
   selectedId,
@@ -186,6 +197,11 @@ export function AnnotationCanvas({
           height={imageHeight}
           className="block h-auto w-full select-none"
           draggable={false}
+          style={
+            scanView
+              ? { filter: "grayscale(1) contrast(1.4) brightness(1.06)" }
+              : undefined
+          }
         />
 
         <svg

@@ -39,6 +39,51 @@ const serverEnvSchema = z.object({
 
   /** Name of the private bucket holding page photographs. */
   SUPABASE_STORAGE_BUCKET: z.string().min(1),
+
+  /**
+   * Which implementation of the vision interface to use. Everything about the
+   * enrichment pipeline is provider-agnostic except this one line.
+   */
+  VISION_PROVIDER: z.enum(["gemini", "openrouter"]).default("gemini"),
+
+  /** Google AI Studio. Free tier, no card, rate limited per minute and per day. */
+  GEMINI_API_KEY: z.string().min(1).optional(),
+
+  /**
+   * Pinned rather than an alias, so the model cannot change under the app
+   * without a commit.
+   *
+   * Not `gemini-flash-latest`: measured, it answered 503 "experiencing high
+   * demand" while pinned models were fine, and a moving alias means the thing
+   * transcribing your books can change overnight.
+   *
+   * Which models a key can reach varies by account and changes over time —
+   * `gemini-2.5-flash` is still *listed* by the models endpoint but refuses new
+   * keys with a 404. Measured latency on a trivial request: 3.5-flash was
+   * consistently under two seconds, 3.6-flash swung between two and twelve.
+   */
+  GEMINI_VISION_MODEL: z.string().min(1).default("gemini-3.5-flash"),
+
+  /** openrouter.ai. The fallback provider. */
+  OPENROUTER_API_KEY: z.string().min(1).optional(),
+  OPENROUTER_VISION_MODEL: z
+    .string()
+    .min(1)
+    .default("meta-llama/llama-3.2-11b-vision-instruct:free"),
+}).superRefine((env, ctx) => {
+  // The key is required only for the provider actually selected. A missing key
+  // for the provider you are not using is not an error, and demanding both
+  // would mean signing up for an account you have no intention of using.
+  const requiredKey =
+    env.VISION_PROVIDER === "gemini" ? "GEMINI_API_KEY" : "OPENROUTER_API_KEY";
+
+  if (!env[requiredKey]) {
+    ctx.addIssue({
+      code: "custom",
+      path: [requiredKey],
+      message: `${requiredKey} is required when VISION_PROVIDER is "${env.VISION_PROVIDER}".`,
+    });
+  }
 });
 
 const parsed = serverEnvSchema.safeParse(process.env);

@@ -22,9 +22,14 @@ export default async function AppLayout({
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-8 px-6 py-8">
       <header className="flex items-center justify-between gap-4 border-b border-ink-muted/20 pb-4">
-        <Link href="/library" className="font-serif text-xl">
-          Marginalia
-        </Link>
+        <div className="flex items-baseline gap-6">
+          <Link href="/library" className="font-serif text-xl">
+            Marginalia
+          </Link>
+          <Link href="/search" className="text-sm underline">
+            Search
+          </Link>
+        </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-ink-muted">{user.email}</span>
           <SignOutButton />

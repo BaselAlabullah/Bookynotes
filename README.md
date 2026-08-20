@@ -8,9 +8,10 @@ pulls out the surrounding context, so the note is stored with the text it refers
 to rather than with a page number. Everything you have ever marked is then
 searchable across your whole library.
 
-> Status: phase 6 of 9. You can sign up, add books, upload page photographs, and
-> mark passages on them with coordinate-anchored annotations. The vision model
-> arrives next. Phases are tracked at the bottom of this file.
+> Status: phase 8 of 9. Feature complete: add a book, photograph a page, mark a
+> passage, have a vision model transcribe it, and search every annotation you
+> have ever made. A design pass and deployment remain. Phases are tracked at the
+> bottom of this file.
 
 ## Architecture
 
@@ -150,7 +151,13 @@ Notes on the things that actually bite, collected as we hit them.
   already on Open Library's CDN, so re-optimising them spends quota for nothing.
 - **Vision APIs are rate limited per minute and per day.** Free-tier 429s are
   routine, not exceptional. They are handled explicitly with backoff, and a
-  terminal failure surfaces a retry button rather than disappearing.
+  terminal failure surfaces a retry button rather than disappearing. A rate
+  limit does not consume the retry budget, so one bad afternoon cannot mark good
+  annotations permanently failed.
+- **Serverless caps how long you can wait.** In-request retries are three
+  attempts a few hundred milliseconds apart, not a patient exponential backoff:
+  a long wait would be killed by the function's wall-clock limit and the user
+  would see nothing. Anything longer becomes a retry button.
 - **Supabase pauses idle projects.** A free project that goes untouched for
   about a week is suspended until you open the dashboard again. Worth knowing
   before a demo.
@@ -176,6 +183,8 @@ Notes on the things that actually bite, collected as we hit them.
 | 4 | Books: Open Library search, create, library view | done |
 | 5 | Pages: direct-to-storage upload, signed reads, page view | done |
 | 6 | Canvas layer: normalized coordinates, pins, resize and zoom | done |
-| 7 | Enrichment: provider interface, pending, backoff, retry | |
-| 8 | Full-text search with tsvector and GIN | |
+| 7 | Enrichment: provider interface, pending, backoff, retry | done |
+| 8 | Full-text search with tsvector and GIN | done |
+| 8.5 | Aesthetic overhaul before anything is public | |
 | 9 | Deploy to Vercel and verify end to end | |
+| 10 | Python page-processor: rectify and clean page photographs | |

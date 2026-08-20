@@ -45,3 +45,12 @@ export type CreateAnnotationResult = {
   error: string | null;
   createdId: string | null;
 };
+
+/**
+ * The envelope the enrichment endpoint returns. Parsed rather than cast: JSON
+ * crossing a network is `unknown` regardless of who wrote the endpoint.
+ */
+export const enrichResponseSchema = z.object({
+  status: z.enum(["complete", "cached", "retryable", "failed"]).optional(),
+  error: z.string().optional(),
+});

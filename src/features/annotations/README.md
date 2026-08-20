@@ -54,6 +54,39 @@ non-uniform scaling stretches glyphs. Same numbers, no distortion.
 ## Writes never wait on the model
 
 `createAnnotation` returns as soon as the row is written. The row is born
-`enrichment_status = 'pending'` with `retry_count = 0`; nothing in this feature
-knows the vision model exists. Phase 7 picks pending rows up from a separate
-request and updates them.
+`enrichment_status = 'pending'` with `retry_count = 0`, and
+`annotations.service.ts` does not know the vision model exists.
+
+Enrichment is a separate request, `POST /api/annotations/<id>/enrich`, run by
+`annotations.enrichment.ts`:
+
+```
+find the annotation (scoped)
+  already 'complete' and not forced?  -> return it, model not called
+fetch the page image via a signed URL
+crop it for the model                 -> annotations.crop.ts
+call the provider with retries        -> integrations/vision
+  success   -> extracted_passage + extracted_context, status 'complete'
+  rate limit-> status stays 'pending', budget NOT consumed
+  transient -> retry, then 'pending' or 'failed' once attempts run out
+  permanent -> 'failed' immediately, never retried
+```
+
+If that request never happens, the annotation is still saved and still correct.
+It simply has no passage yet, and the list offers a button.
+
+`enrichment_status = 'complete'` is the cache: the same region is never sent to
+the model twice. The only exception is the user's own "try again" on a failed
+row, which also resets the attempt budget — asking again is a fresh decision,
+not a continuation of our automatic attempts.
+
+## What the model actually sees
+
+Not the raw photograph. `annotations.crop.ts` produces a padded crop, grayscaled
+and contrast-normalised, with the reader's own rectangle drawn on it in red — so
+the region is shown rather than described in coordinates the model has to
+resolve. See DECISIONS 0039.
+
+The crop is computed against the dimensions `sharp` decodes, not the ones stored
+on the page row, so a browser that reported the wrong size still gets the right
+crop.

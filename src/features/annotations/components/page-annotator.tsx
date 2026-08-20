@@ -1,10 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import type { PageId } from "@/db/ids";
 
 import { createAnnotationAction } from "../annotations.actions";
+import { enrichResponseSchema } from "../annotations.schema";
 import type { Annotation, NormalizedRect } from "../annotations.types";
 import { AnnotationCanvas } from "./annotation-canvas";
 
@@ -30,11 +32,6 @@ function formatPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-/**
- * Owns the state around the canvas: what is selected, what is being drawn, and
- * the zoom level. The canvas itself is presentational, so all of the awkward
- * "what is happening right now" lives in one place.
- */
 export function PageAnnotator({
   pageId,
   imageUrl,
@@ -42,14 +39,60 @@ export function PageAnnotator({
   imageHeight,
   annotations,
 }: PageAnnotatorProps) {
+  const router = useRouter();
   const [zoomIndex, setZoomIndex] = useState(0);
+  const [scanView, setScanView] = useState(false);
   const [draft, setDraft] = useState<NormalizedRect | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, startSaving] = useTransition();
 
+  /** Ids currently being enriched, so each row can show its own spinner. */
+  const [enriching, setEnriching] = useState<ReadonlySet<string>>(new Set());
+
   const zoom = ZOOM_STEPS[zoomIndex] ?? 1;
+
+  /**
+   * Ask the server to run the model over one annotation.
+   *
+   * A separate request from the write, always — that is the rule the whole
+   * pipeline is built around. If this never runs, or fails, the annotation is
+   * still saved and still correct; it simply has no passage yet.
+   */
+  async function enrich(annotationId: string, force = false) {
+    setEnriching((current) => new Set(current).add(annotationId));
+
+    try {
+      const response = await fetch(
+        `/api/annotations/${annotationId}/enrich${force ? "?force=true" : ""}`,
+        { method: "POST" },
+      );
+
+      const body = enrichResponseSchema.safeParse(await response.json());
+
+      if (!response.ok) {
+        setError(
+          body.success && body.data.error
+            ? body.data.error
+            : "The passage could not be extracted.",
+        );
+      } else {
+        setError(null);
+      }
+    } catch {
+      setError("Could not reach the extraction service.");
+    } finally {
+      setEnriching((current) => {
+        const next = new Set(current);
+        next.delete(annotationId);
+        return next;
+      });
+      // The list is server-rendered, so ask the server for it again rather than
+      // keeping a client-side copy of the row in step.
+      router.refresh();
+    }
+  }
 
   function save() {
     if (!draft) {
@@ -58,10 +101,6 @@ export function PageAnnotator({
 
     setError(null);
 
-    // The Server Function is called directly rather than through a form action,
-    // so the result comes back as a value and the draft is cleared only once
-    // the write has actually succeeded. Setting state inside a transition
-    // callback is an event, not an effect — nothing is being synchronised here.
     startSaving(async () => {
       const result = await createAnnotationAction({
         pageId,
@@ -77,6 +116,13 @@ export function PageAnnotator({
       setDraft(null);
       setComment("");
       setSelectedId(result.createdId);
+
+      // Kick off extraction now that the row exists. Deliberately not awaited
+      // inside the same call that wrote it: the write is already done and
+      // durable, and this is allowed to take as long as it takes.
+      if (result.createdId) {
+        void enrich(result.createdId);
+      }
     });
   }
 
@@ -109,6 +155,15 @@ export function PageAnnotator({
           </button>
         </div>
 
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={scanView}
+            onChange={(event) => setScanView(event.target.checked)}
+          />
+          Scan view
+        </label>
+
         <p className="text-sm text-ink-muted">
           Drag across a passage to mark it.
         </p>
@@ -119,6 +174,7 @@ export function PageAnnotator({
         imageWidth={imageWidth}
         imageHeight={imageHeight}
         zoom={zoom}
+        scanView={scanView}
         annotations={annotations}
         draft={draft}
         selectedId={selectedId}
@@ -147,12 +203,6 @@ export function PageAnnotator({
             className="rounded-md border border-ink-muted/30 bg-transparent px-3 py-2 text-sm outline-none focus:border-accent"
           />
 
-          {error ? (
-            <p role="alert" className="text-sm text-red-600">
-              {error}
-            </p>
-          ) : null}
-
           <div className="flex gap-2">
             <button
               type="button"
@@ -177,6 +227,12 @@ export function PageAnnotator({
         </div>
       ) : null}
 
+      {error ? (
+        <p role="alert" className="text-sm text-red-600">
+          {error}
+        </p>
+      ) : null}
+
       <section className="flex flex-col gap-2">
         <h2 className="font-medium">
           Annotations{annotations.length > 0 ? ` (${annotations.length})` : ""}
@@ -189,43 +245,129 @@ export function PageAnnotator({
         ) : (
           <ul className="flex flex-col gap-2">
             {annotations.map((annotation, index) => (
-              <li key={annotation.id}>
+              <li
+                key={annotation.id}
+                className={`flex items-start gap-3 rounded-lg border p-3 ${
+                  selectedId === annotation.id
+                    ? "border-accent"
+                    : "border-ink-muted/15"
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => setSelectedId(annotation.id)}
-                  className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left ${
-                    selectedId === annotation.id
-                      ? "border-accent"
-                      : "border-ink-muted/15"
-                  }`}
+                  className="flex flex-1 flex-col items-start gap-2 text-left"
                 >
-                  <span className="rounded-full bg-accent px-2 py-0.5 text-xs text-paper">
-                    {index + 1}
-                  </span>
-
-                  <span className="flex flex-1 flex-col gap-1">
+                  <span className="flex items-center gap-2">
+                    <span className="rounded-full bg-accent px-2 py-0.5 text-xs text-paper">
+                      {index + 1}
+                    </span>
                     <span className="text-sm">
                       {annotation.userComment || (
                         <span className="text-ink-muted">No note</span>
                       )}
                     </span>
-
-                    {/* Phase 7 fills these in. Until then the status is the
-                        honest answer: the row exists, the model has not run. */}
-                    <span className="text-xs text-ink-muted">
-                      {annotation.enrichmentStatus === "pending"
-                        ? "Passage not extracted yet"
-                        : annotation.enrichmentStatus === "failed"
-                          ? "Extraction failed"
-                          : annotation.extractedPassage}
-                    </span>
                   </span>
+
+                  <AnnotationExtraction
+                    annotation={annotation}
+                    isEnriching={enriching.has(annotation.id)}
+                  />
                 </button>
+
+                <AnnotationEnrichmentAction
+                  annotation={annotation}
+                  isEnriching={enriching.has(annotation.id)}
+                  onEnrich={enrich}
+                />
               </li>
             ))}
           </ul>
         )}
       </section>
     </div>
+  );
+}
+
+/** What the model found, or an honest account of why it has not yet. */
+function AnnotationExtraction({
+  annotation,
+  isEnriching,
+}: {
+  annotation: Annotation;
+  isEnriching: boolean;
+}) {
+  if (isEnriching) {
+    return (
+      <span role="status" className="text-xs text-ink-muted">
+        Reading the passage…
+      </span>
+    );
+  }
+
+  if (annotation.enrichmentStatus === "pending") {
+    return (
+      <span className="text-xs text-ink-muted">
+        Passage not extracted yet
+        {annotation.enrichmentError ? ` — ${annotation.enrichmentError}` : ""}
+      </span>
+    );
+  }
+
+  if (annotation.enrichmentStatus === "failed") {
+    return (
+      <span className="text-xs text-red-600">
+        {annotation.enrichmentError ?? "Extraction failed."}
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex flex-col gap-1">
+      {annotation.extractedPassage ? (
+        <span className="border-l-2 border-accent/40 pl-2 text-sm italic">
+          “{annotation.extractedPassage}”
+        </span>
+      ) : null}
+      {annotation.extractedContext ? (
+        <span className="text-xs text-ink-muted">
+          {annotation.extractedContext}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * The retry affordance.
+ *
+ * A 'failed' annotation is never a dead end — the user can always ask again,
+ * and asking again resets the attempt budget. A 'pending' one gets a plain
+ * "Extract" button, which is what makes an interrupted or abandoned enrichment
+ * recoverable rather than stuck.
+ */
+function AnnotationEnrichmentAction({
+  annotation,
+  isEnriching,
+  onEnrich,
+}: {
+  annotation: Annotation;
+  isEnriching: boolean;
+  onEnrich: (annotationId: string, force?: boolean) => void;
+}) {
+  if (isEnriching || annotation.enrichmentStatus === "complete") {
+    return null;
+  }
+
+  const isRetry = annotation.enrichmentStatus === "failed";
+
+  return (
+    <button
+      type="button"
+      onClick={() => onEnrich(annotation.id, isRetry)}
+      className="shrink-0 rounded-md border border-accent px-3 py-1.5 text-xs text-accent"
+    >
+      {isRetry ? "Try again" : "Extract passage"}
+    </button>
   );
 }

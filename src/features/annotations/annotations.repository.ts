@@ -123,6 +123,34 @@ export async function recordEnrichmentFailure(
   return updated ?? null;
 }
 
+/**
+ * Put a failed annotation back in the queue.
+ *
+ * The retry count is reset, not incremented: the user asking again is a new
+ * decision, not a continuation of our automatic attempts. Without this, a
+ * failure during a rate-limited afternoon would leave the row one attempt from
+ * being permanently dead the next time it was touched.
+ */
+export async function resetEnrichment(
+  userId: UserId,
+  annotationId: AnnotationId,
+): Promise<Annotation | null> {
+  const [updated] = await db
+    .update(annotations)
+    .set({
+      enrichmentStatus: "pending",
+      retryCount: 0,
+      enrichmentError: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(eq(annotations.id, annotationId), eq(annotations.userId, userId)),
+    )
+    .returning();
+
+  return updated ?? null;
+}
+
 export async function deleteAnnotation(
   userId: UserId,
   annotationId: AnnotationId,

@@ -812,3 +812,333 @@ did: the wrapper is still exactly the image's box.
 Verified on both shapes at a nominal 1000x900 viewport: a 1240x1754 page renders
 496x702 (height-limited), a 3024x1400 spread renders 1000x463 (width-limited),
 and the overlay stays pinned to the image box in both.
+
+---
+
+## 0037 — The vision provider is an interface with two real implementations
+
+**Problem.** The app needs a vision model, on a free tier, without being welded
+to one vendor.
+
+**Options.** (a) Call Gemini directly from the enrichment code. (b) Define a
+`VisionProvider` interface and write one implementation. (c) Define the
+interface and write two, selected by environment variable.
+
+**Decision.** (c). Gemini Flash is the default, OpenRouter is the fallback, and
+`VISION_PROVIDER` chooses.
+
+**Why.** An interface with a single implementation is a guess about what varies;
+the second one is what proves the seam is in the right place. It also turned out
+to be informative: Gemini takes `inline_data` with a response schema, OpenRouter
+takes OpenAI-shaped `image_url` content parts with a loose `json_object` hint.
+Those differences are exactly what the interface exists to hide, and neither
+would have been visible with one provider.
+
+Both are called with plain `fetch` rather than a vendor SDK. Each is one POST,
+and keeping the wire format in the file is what makes a free-tier 429 debuggable
+instead of a mystery inside a client library.
+
+---
+
+## 0038 — Failures are classified by what to do, not by what went wrong
+
+**Problem.** A vision call can fail because the quota is gone, because the
+network blipped, or because the API key is wrong. Retrying is right for one of
+those, pointless for another, and actively harmful for the third.
+
+**Options.** (a) One error type, retry everything N times. (b) Three error
+types: rate limited, transient, permanent.
+
+**Decision.** (b), in `vision.types.ts`, with the retry policy in
+`vision.client.ts` reading only that classification.
+
+**Why.** Retrying a bad API key three times spends the budget that a genuine
+blip needs, and takes three times as long to tell the user something that will
+never work. The verification bore this out: an invalid key produced one failed
+attempt and a terminal state, not three.
+
+Two policy details that follow from running on serverless:
+
+- **In-request retries are deliberately few and short** (three attempts, a few
+  hundred milliseconds apart, jittered). A long backoff cannot survive a
+  function's wall-clock limit — it would be killed mid-wait and the user would
+  see nothing at all. Persistent failure is handled by ending the request and
+  leaving the row retryable.
+- **A rate limit longer than a few seconds is not waited out.** Free tiers
+  routinely answer "come back in 60 seconds"; a retry button beats holding a
+  function open for a minute.
+
+Rate limits also do not consume the attempt budget. A quota wall is not the
+annotation's fault, and letting it count would mark perfectly good annotations
+permanently failed after one bad afternoon.
+
+---
+
+## 0039 — Enrichment is the one place image bytes pass through this server
+
+**Problem.** Phase 5 established that image bytes never transit the app server.
+The vision model needs pixels.
+
+**Options.** (a) Have the browser crop the region and post it, keeping the
+server out of the way. (b) Have the server fetch the page, crop it, and send it.
+
+**Decision.** (b), and DECISIONS 0025's rule now has a stated exception.
+
+**Why.** With (a) the model's input is whatever the client chose to send, and
+"what did we actually ask the model?" stops being answerable from the server. It
+would also make enrichment impossible from anywhere the image is not already
+loaded. The cost is real — an extra fetch, and `sharp` as a native dependency —
+and it is confined to this one path.
+
+What gets sent is not the raw photograph:
+
+- **A padded crop.** The whole page wastes tokens and makes the model hunt; the
+  bare selection removes the surrounding lines that "context" is meant to
+  describe.
+- **With the user's rectangle drawn on it.** Because the crop is padded, "which
+  part did the reader mean?" would otherwise be ambiguous. Drawing the box shows
+  the model the region instead of describing coordinates it has to resolve.
+- **Grayscaled and contrast-normalised.** A phone photo of paper is unevenly
+  lit. This is the "make it look scanned" step, applied to the model's input
+  rather than to anything we keep.
+- **Downscaled to 1400px.** Past the point where letters are sharp, resolution
+  is only cost.
+
+One detail worth keeping: the crop is computed against the dimensions `sharp`
+decodes, not the ones stored on the page row. Those were reported by the browser
+(DECISIONS 0028) and cannot be verified — but because the rectangle is a
+*fraction*, multiplying by the true decoded size is correct whatever the row
+claims. A client that lied about dimensions still gets the right crop.
+
+---
+
+## 0040 — "Scan view" is a display filter, not a regenerated page
+
+**Problem.** Photographs of book pages are dim, warped and unevenly lit. The
+suggestion was to have an LLM return a cleaned, scanned-looking version of the
+page and use that instead.
+
+**Options.** (a) Send the photo to an image model and store the cleaned result
+as the page. (b) A CSS filter over the original for display, plus the same
+cleanup applied to the model's input.
+
+**Decision.** (b).
+
+**Why.** (a) breaks two things at once. An image model *redraws* rather than
+cleans, so on a page of prose it will silently alter words — fatal for an app
+whose purpose is recording what a book actually says. And a regenerated image
+has different geometry: dewarped, recropped, reframed. Every annotation
+coordinate anchored to the original photograph would then point somewhere else,
+which is the one invariant the entire project is built on.
+
+(b) gets the legibility without either cost. `filter: grayscale(1) contrast(1.4)`
+changes no pixel geometry, so coordinates stay valid, and it is free and
+instant. The same treatment is applied to the crop the model sees, where it
+genuinely improves transcription.
+
+True perspective de-warping remains possible, but it would have to happen at
+upload time, before any annotation exists, and the rectified image would become
+the canonical one. That is a different feature, not a filter.
+
+---
+
+## 0041 — Verifying phase 7
+
+Not a fork, a receipt. Run on 2026-08-19 against the production build, the live
+project, and a synthetic page photograph with uneven lighting, using a
+deliberately invalid API key so the failure paths were exercised for real:
+
+- The prepared crop was **868 x 236** for a selection 61px tall — padded on all
+  sides as intended, grayscaled, contrast-normalised, and carrying the user's
+  rectangle drawn in red. Inspected as an image, not just asserted: the warm
+  gradient was gone, the neighbouring lines were legible, and the marked line
+  was unmistakable.
+- An invalid key produced **one** attempt and a terminal `failed`, not three —
+  the permanent/transient split doing its job.
+- The user's retry reset the attempt budget rather than continuing it.
+- An annotation already `complete` returned `cached` **without calling the
+  model**. This is the cache that makes a free tier survivable.
+- No session: `401`. Unknown or another user's annotation: `404`.
+
+Untested until a real API key is present: the success path, and the quality of
+what the model returns.
+
+---
+
+## 0042 — The Gemini model is configurable, and pinned rather than an alias
+
+**Problem.** The provider hardcoded `gemini-2.0-flash`. On a freshly created API
+key that model does not exist, so every extraction failed with a 404 — found
+only by calling the real API with a real key.
+
+Worse, the obvious replacement was also wrong. `gemini-2.5-flash` is still
+*listed* by the models endpoint but refuses new keys: "no longer available to new
+users". A model being listed is not the same as a model you can call.
+
+**Options.** (a) Hardcode a newer model. (b) Use the `gemini-flash-latest`
+alias. (c) Make it an environment variable with a pinned default.
+
+**Decision.** (c). `GEMINI_VISION_MODEL`, defaulting to `gemini-3.5-flash`, and
+`OPENROUTER_VISION_MODEL` already worked this way.
+
+**Why.** (a) is the bug we just had, one model generation later. (b) looks
+attractive and is worse than it sounds: measured, `gemini-flash-latest` answered
+`503 "experiencing high demand"` while pinned models answered fine, and an alias
+means the thing transcribing your books can change overnight with no commit and
+no way to reproduce an old result.
+
+The default was chosen by measurement, not by version number. Three trivial
+requests each:
+
+```
+gemini-3.5-flash    2152ms  1785ms  1664ms
+gemini-3.6-flash    6505ms  2087ms  11794ms
+```
+
+3.6 is newer and was Google's own suggested replacement in the 404 message, but
+it was between two and seven times slower and far less consistent. For a
+free-tier OCR call sitting in front of a spinner, predictable latency wins.
+
+The general lesson, worth keeping for phase 9: model availability is per-account
+and changes over time. Anything that names a model belongs in configuration.
+
+---
+
+## 0043 — Phase 7 verified against the live model
+
+Not a fork, a receipt. Run on 2026-08-19 with a real API key, against a
+synthetic page of prose with deliberately uneven lighting, so the transcription
+could be checked word for word rather than merely being non-empty.
+
+Selection: one full line of twelve, marked with a rectangle.
+
+```
+expected : "It was said in the taverns that the sea had learned to match him."
+passage  : "It was said in the taverns that the sea had learned to match him."
+exact match: true      word overlap: 14/14      status: complete      retries: 0
+```
+
+The context field was the more interesting result:
+
+> "The passage is preceded by a sentence mentioning inventions that remarkably
+> arrived where they intended, and followed by a sentence introducing Anselm the
+> younger, who inherited a workshop and debts."
+
+Both neighbours are correctly identified, which is direct evidence that the
+padding in `annotations.crop.ts` is doing its job — an unpadded crop could not
+have produced that, and a whole-page image would not have known which line was
+meant.
+
+Timings: 6.5s for the whole request (signed URL, image fetch, crop, model,
+write). A second call on the same annotation returned `cached` in 925ms without
+touching the model.
+
+---
+
+## 0044 — Search is a GET form and a server component
+
+**Problem.** How does a search query reach the server?
+
+**Options.** (a) A route handler plus a client fetch, as phase 4's Open Library
+search does. (b) A plain `<form method="get">` pointing at `/search`, with the
+page reading `?q=`.
+
+**Decision.** (b). No `"use client"` anywhere in the search feature.
+
+**Why.** The two searches look alike and are not. Open Library search fires
+while the user types and needs overlapping, cancellable requests, so it had to
+be a route handler (DECISIONS 0020). This one is submit-driven, and making the
+query part of the URL hands us three things without writing them: results are
+shareable and bookmarkable, the back button works, and the whole feature
+functions with JavaScript disabled.
+
+It also makes the page a pure function of its URL, which is the easiest kind of
+page to reason about and to test — the verification simply fetched
+`/search?q=sea` and read the HTML.
+
+---
+
+## 0045 — A read may join across domains; a write may not
+
+**Problem.** DECISIONS 0003 says a repository touches only its own tables. A
+search result is an annotation, plus the page it sits on, plus the book that
+page belongs to. Search has no table of its own.
+
+**Options.** (a) Query annotations, then fetch pages, then fetch books through
+their own repositories and stitch the results together in JavaScript.
+(b) Let `search.repository.ts` join all three.
+
+**Decision.** (b), with the rule restated rather than abandoned: **reads may
+cross domains, writes may not.**
+
+**Why.** Option (a) is three round trips and a manual join to satisfy a layering
+rule, in exchange for nothing — it is dogma at the cost of the single query
+Postgres exists to answer. The part of the rule that was actually protecting
+something still holds: nothing writes through this file, and `user_id` is in the
+WHERE clause exactly as it is everywhere else.
+
+The joins are inner, not left. Every annotation has a page and every page has a
+book, enforced by foreign keys, so a left join could only serve to hide a broken
+relationship that cannot happen.
+
+---
+
+## 0046 — `websearch_to_tsquery`, and highlights that are not HTML
+
+**Problem.** Turning a typed string into a `tsquery`, and showing the user where
+the match was.
+
+**Options for the query.** (a) `plain_to_tsquery`. (b) `websearch_to_tsquery`.
+
+**Decision.** (b).
+
+**Why.** Readers already know how search boxes behave: quoted phrases stay
+together, `or` broadens, a leading `-` excludes. All three were verified working.
+The decisive reason is different though — `plain_to_tsquery` raises a syntax
+error on a stray operator, which turns somebody's typo into a 500.
+`websearch_to_tsquery` never throws.
+
+**Options for highlighting.** (a) `ts_headline` with `StartSel=<mark>`, rendered
+via `dangerouslySetInnerHTML`. (b) `ts_headline` with control characters as
+delimiters, split in React into real elements.
+
+**Decision.** (b).
+
+**Why.** (a) means handing a user's own note and a language model's output to an
+HTML parser, and reaching for the escape hatch React deliberately made ugly.
+Control characters cost one `split()` and cannot occur in a book passage, so
+splitting on them can never cut real text in half. Verified: three `<mark>`
+elements rendered, zero control characters reaching the browser.
+
+---
+
+## 0047 — Verifying phase 8
+
+Not a fork, a receipt. Run on 2026-08-19 against the production build and the
+live database, with three annotations placing the word "sea" in a different
+field each, plus a second user whose annotation was stuffed with the term.
+
+**The weights from phase 2 work.** Ranking `sea` across the three:
+
+```
+1.40000   "the sea learned to match him"      'sea' in the comment  -> weight A
+0.40000   "opening line, worth remembering"   'sea' in the passage  -> weight B
+0.20000   "about the debts"                   'sea' in the context  -> weight C
+```
+
+A clean seven-fold separation between a reader's own words and the surrounding
+context, decided in phase 2 and only observable now.
+
+**Operators and stemming**, each returning exactly the expected count:
+`"never seen the sea"` as a phrase (1), `sea -taverns` (2), `debts or rumour`
+(2), `cartographers` matching "cartographer" (2), `SAILORS` matching "sailors"
+(1), `believing` matching "believed" (1), nonsense (0).
+
+**The GIN index is used.** With `enable_seqscan = off` the plan is a Bitmap Heap
+Scan with `Recheck Cond` on `annotations_search_vector_idx` — and on four rows
+the planner picks that shape on its own anyway.
+
+**The rest**: three results rendered, three `<mark>` highlights, no control
+characters reaching the browser, the other user's stuffed annotation absent, a
+one-character query rejected with a message, and `'; drop table annotations; --`
+treated as a search phrase that matched nothing.
