@@ -8,8 +8,9 @@ pulls out the surrounding context, so the note is stored with the text it refers
 to rather than with a page number. Everything you have ever marked is then
 searchable across your whole library.
 
-> Status: phase 3 of 9. You can sign up, sign in, and reach a protected library
-> page. Books arrive next. Phases are tracked at the bottom of this file.
+> Status: phase 4 of 9. You can sign up, search Open Library, add books, and see
+> your library. Page photographs arrive next. Phases are tracked at the bottom of
+> this file.
 
 ## Architecture
 
@@ -133,6 +134,9 @@ Notes on the things that actually bite, collected as we hit them.
   so runtime traffic must use Supabase's transaction pooler (port 6543).
   Migrations need the direct connection (5432) instead, because the transaction
   pooler cannot hold the locks DDL requires. Hence two connection strings.
+- **Vercel meters optimised images on the free tier.** Book covers are rendered
+  with a plain `<img>` rather than `next/image`: they are already small and
+  already on Open Library's CDN, so re-optimising them spends quota for nothing.
 - **Vision APIs are rate limited per minute and per day.** Free-tier 429s are
   routine, not exceptional. They are handled explicitly with backoff, and a
   terminal failure surfaces a retry button rather than disappearing.
@@ -158,7 +162,7 @@ Notes on the things that actually bite, collected as we hit them.
 | 1 | Scaffold, config, folder structure, docs | done |
 | 2 | Supabase, schema, Drizzle migrations, scoped data access | done |
 | 3 | Auth: sign up, sign in, protected routes, sessions | done |
-| 4 | Books: Open Library search, create, library view | |
+| 4 | Books: Open Library search, create, library view | done |
 | 5 | Pages: direct-to-storage upload, signed reads, page view | |
 | 6 | Canvas layer: normalized coordinates, pins, resize and zoom | |
 | 7 | Enrichment: provider interface, pending, backoff, retry | |

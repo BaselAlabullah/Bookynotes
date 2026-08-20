@@ -391,3 +391,112 @@ Two details worth keeping:
   stores the verifier in a cookie at sign-up, so opening the email on a
   different device is a distinct failure from an expired link, and telling
   someone their link expired when it did not sends them round in a circle.
+
+---
+
+## 0020 — Search is a route handler; adding a book is a Server Function
+
+**Problem.** Phase 3 chose Server Functions for auth (0014). Does everything now
+become a Server Function?
+
+**Options.** (a) Both operations as Server Functions. (b) Both as route handlers
+plus client fetch. (c) Split by what the operation is.
+
+**Decision.** (c). `POST` to add a book is a Server Function; `GET
+/api/books/search` is a route handler.
+
+**Why.** Server Functions are POSTs, and React serialises them one at a time per
+client. That is exactly right for a mutation — it stops double submits for free
+— and exactly wrong for a search that fires while the user is still typing,
+where requests need to overlap and be cancellable. Adding a book is also a form
+submission that should work without JavaScript; search inherently cannot.
+
+The rule that falls out: mutations from a form are Server Functions, reads that
+need cancellation or concurrency are route handlers.
+
+---
+
+## 0021 — Open Library's optional fields are handled, not assumed away
+
+**Problem.** `author_name` and `cover_i` are absent from a large fraction of
+Open Library works, and the occasional record is unusable entirely.
+
+**Options.** (a) Require the fields in the schema and let a search throw.
+(b) Mark them optional and validate the whole response as one unit. (c) Mark
+them optional and validate each record separately, dropping the ones that fail.
+
+**Decision.** (c). `docs` is parsed as `unknown[]`, then each entry is validated
+on its own and skipped if invalid.
+
+**Why.** With (a) or (b), one malformed record in a list of ten means the user's
+search for a real book fails with a validation error they can do nothing about.
+A third party's data quality should cost a result, not the request.
+
+A related consequence: `books.author` is NOT NULL, and an absent author becomes
+the literal string "Unknown author" rather than making the column nullable. The
+absence is a display concern, and a nullable column would push that concern into
+every query and every template downstream.
+
+---
+
+## 0022 — Book covers use a plain `<img>`, not `next/image`
+
+**Problem.** `next/image` is the default answer and the linter asks for it.
+
+**Options.** (a) `next/image` with `covers.openlibrary.org` in
+`images.remotePatterns`. (b) A plain `<img>` with an explicit lint exemption.
+
+**Decision.** (b).
+
+**Why.** Vercel's free tier meters optimised images. These covers are already
+about 180px wide, already served from Open Library's CDN, and never rendered in
+bulk above the fold. Spending a metered quota to re-optimise somebody else's
+correctly sized thumbnail is a bad trade on a zero-cost project. The lint rule is
+disabled on exactly one line, with the reasoning in the component's doc comment.
+
+---
+
+## 0023 — The search endpoint requires a session
+
+**Problem.** `/api/books/search` exposes no user data. Does it need auth?
+
+**Options.** (a) Leave it public — it is a proxy to a public API. (b) Require a
+session.
+
+**Decision.** (b), returning `401` rather than redirecting.
+
+**Why.** A public endpoint here is an open proxy: anyone could point a script at
+it and spend our Open Library goodwill, and the next thing we would have to build
+is IP rate limiting. Requiring a session makes abuse cost an account.
+
+It returns `401` instead of calling `requireUser()` because a redirect is a
+nonsense answer to a `fetch` — the caller gets an HTML sign-in page where it
+expected JSON. This is why `auth.session.ts` exposes `getCurrentUser` alongside
+`requireUser`.
+
+---
+
+## 0024 — Verifying phase 4 against a running server
+
+Not a fork, a receipt. Tested on 2026-08-19 against the production build, the
+live Supabase project and the live Open Library API, with two seeded users
+deleted afterwards:
+
+- `GET /api/books/search` with no session gave `401`.
+- With a session, "piranesi susanna clarke" returned the real work
+  `OL20893680W` with cover and edition count.
+- A one-character query gave `400` with the validation message.
+- Adding that result wrote the book and `/library` rendered its title, author
+  and cover.
+- A bogus `openLibraryId` was rejected by the Server Function, proving hidden
+  form inputs are re-validated rather than trusted.
+- **A second signed-in user saw an empty library while the book existed in the
+  table.** This is the user scoping from decisions 0002 and 0008 demonstrated
+  end to end, and it is the property everything else rests on.
+- Deleting the users removed the book by cascade.
+
+One thing the linter caught that is worth keeping: React's
+`react-hooks/set-state-in-effect` flagged the search effect clearing results for
+a too-short query. That was a genuine "you might not need an effect" — whether
+results are worth showing is derived from the query, not state to be kept in
+sync with it. The effect now does one thing: talk to the network.
