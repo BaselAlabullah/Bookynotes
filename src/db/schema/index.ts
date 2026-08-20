@@ -8,6 +8,7 @@
  * Supabase's `auth.users` is deliberately absent: it is not ours to migrate.
  * The foreign keys pointing at it live in a hand-written migration.
  */
+export { profiles } from "./profiles";
 export { books } from "./books";
 export { pages } from "./pages";
 export { annotations, enrichmentStatus } from "./annotations";

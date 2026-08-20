@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { requireUser } from "@/features/auth/auth.session";
+import { findProfile } from "@/features/auth/profiles.repository";
 import { SignOutButton } from "@/features/auth/components/sign-out-button";
 import { AppShortcuts } from "@/components/ui/app-shortcuts";
 
@@ -19,6 +20,10 @@ export default async function AppLayout({
   children: ReactNode;
 }) {
   const user = await requireUser();
+  // The username if they have one, the email if they signed up before usernames
+  // existed. Request-cached, so a page below can ask for it without a second
+  // query.
+  const profile = await findProfile(user.id);
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[96rem] flex-col px-4 sm:px-6 lg:px-8">
@@ -46,7 +51,7 @@ export default async function AppLayout({
         </form>
 
         <div className="ml-auto flex items-center gap-3 sm:ml-0">
-          <span className="hidden max-w-44 truncate text-xs text-ink-muted lg:block">{user.email}</span>
+          <span className="hidden max-w-44 truncate text-xs text-ink-muted lg:block">{profile?.username ?? user.email}</span>
           <AppShortcuts />
           <SignOutButton />
         </div>

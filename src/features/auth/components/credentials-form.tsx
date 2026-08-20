@@ -11,6 +11,12 @@ type CredentialsFormProps = {
   action: (state: AuthFormState, formData: FormData) => Promise<AuthFormState>;
   submitLabel: string;
   alternative: { prompt: string; href: string; label: string };
+  /**
+   * Sign-up asks for a username; signing in does not. A boolean rather than two
+   * components, because everything else about the two forms is identical and
+   * duplicating them would mean fixing every future change twice.
+   */
+  withUsername?: boolean;
 };
 
 /**
@@ -24,11 +30,33 @@ export function CredentialsForm({
   action,
   submitLabel,
   alternative,
+  withUsername = false,
 }: CredentialsFormProps) {
   const [state, formAction, isPending] = useActionState(action, emptyFormState);
 
   return (
     <form action={formAction} className="flex w-full flex-col gap-4">
+      {withUsername ? (
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">Username</span>
+          <input
+            name="username"
+            type="text"
+            autoComplete="username"
+            required
+            minLength={3}
+            maxLength={24}
+            // Mirrors the server rule in auth.schema.ts. The browser check is a
+            // courtesy that fails fast; the Zod schema is what actually decides.
+            pattern="[a-zA-Z][a-zA-Z0-9_]*"
+            className="min-w-0 w-full border border-rule bg-paper-raised px-3 py-2.5 outline-none focus:border-accent"
+          />
+          <span className="text-xs text-ink-muted">
+            Letters, digits and underscores. This is how you will be shown.
+          </span>
+        </label>
+      ) : null}
+
       <label className="flex flex-col gap-1.5 text-sm">
         <span className="font-medium">Email</span>
         <input

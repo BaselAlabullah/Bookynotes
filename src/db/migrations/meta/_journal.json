@@ -29,6 +29,20 @@
       "when": 1787217035056,
       "tag": "0003_stored_book_covers",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787224349591,
+      "tag": "0004_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787224366848,
+      "tag": "0005_profiles_auth_user_fk",
+      "breakpoints": true
     }
   ]
 }

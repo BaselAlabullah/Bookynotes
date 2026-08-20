@@ -17,6 +17,7 @@ export default function SignUpPage() {
 
       <CredentialsForm
         action={signUpAction}
+        withUsername
         submitLabel="Create account"
         alternative={{
           prompt: "Already have an account?",

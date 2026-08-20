@@ -1508,3 +1508,72 @@ this is exactly the case it was written for.
 The practical consequence, which belongs in the README rather than being
 discovered: **changing this variable requires a redeploy**, because setting it
 after the fact changes nothing already compiled.
+
+---
+
+## 0062 — The username lives in a table we own
+
+**Problem.** Accounts need a username. Supabase Auth already stores a per-user
+JSON blob, `raw_user_meta_data`, and `signUp` accepts `options.data` to fill it.
+That needs no table, no migration and no repository.
+
+**Options.** (a) Put it in `raw_user_meta_data`. (b) A `profiles` table keyed by
+the Supabase user id.
+
+**Decision.** (b).
+
+**Why.** `raw_user_meta_data` is writable by the user through `updateUser`, and
+there is no way to put a unique constraint on a field inside a JSON column that
+its owner can rewrite. Two people could hold the same name, or one could simply
+take another's. A username is an identity claim; the guarantee has to be the
+database's, not the client's good behaviour.
+
+The table uses the Supabase user id as its own primary key rather than
+generating a second identifier. A person has exactly one profile, so a separate
+id would only create the possibility of the two disagreeing.
+
+Uniqueness is a unique index on `lower(username)`, not on the column. "Basel"
+and "basel" are the same person to a reader, so treating them as two available
+names is a small identity bug waiting to happen. Lowercasing on the way in would
+also work, but it discards the capitalisation someone chose for their own name.
+
+---
+
+## 0063 — Sign-up creates the account, then the profile, and cannot do both at once
+
+**Problem.** Creating an account now means two writes to two different systems:
+Supabase Auth holds the account, our database holds the username. They cannot be
+in one transaction.
+
+**Options.** (a) Profile first, then account. (b) Account first, then profile.
+(c) Account first, and delete it again if the profile fails.
+
+**Decision.** (b), with the username checked *before* either write, and the
+unique index as the real guarantee.
+
+**Why the order.** It is chosen for which orphan is survivable. An account with
+no profile can be given one later — the header already falls back to the email,
+and `npm run username` sets one. A profile with no account is a row pointing at
+nobody, and the foreign key would refuse it anyway.
+
+**Why not (c).** Deleting a just-created account to undo a failed profile insert
+means an admin API call on an error path, which is more ways to fail on the
+worst day rather than fewer.
+
+**Two checks, deliberately.** `isUsernameTaken` runs before anything is written,
+so the ordinary case — a name that is already gone — is a message beside the
+field rather than an account that exists in a half-made state. It is explicitly
+not the guarantee: two people can pass it in the same instant. The unique index
+decides, and the `23505` handler turns losing that race into "that username was
+taken a moment ago" instead of a 500.
+
+Verified: twelve rejection cases produced **zero** accounts. Nothing reaches
+Supabase Auth until the username is known to be well-formed and free. A direct
+duplicate insert bypassing the app was rejected by the index. Deleting an account
+released its username by cascade.
+
+The character rule is narrow on purpose — letters, digits and underscores,
+starting with a letter. A username has to be typed, said aloud, and possibly put
+in a URL one day. The test that made the case for it: `Ьasel`, whose first
+character is a Cyrillic soft sign rather than a Latin B, is rejected. Allowing
+unicode would let one person wear another's name.
