@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { BookId } from "@/db/ids";
 
@@ -40,6 +40,7 @@ async function readErrorMessage(response: Response, fallback: string) {
  */
 export function PageUploader({ bookId }: { bookId: BookId }) {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<UploadState>({ status: "idle" });
 
   /**
@@ -59,6 +60,10 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
   }, [chosen]);
 
   function chooseFile(file: File | null) {
+    if (!file && fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
     setChosen((previous) => {
       if (previous) URL.revokeObjectURL(previous.url);
       return file ? { file, url: URL.createObjectURL(file) } : null;
@@ -206,101 +211,147 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
   return (
     <form
       action={upload}
-      className="flex flex-col gap-4 border-y border-rule bg-paper-raised px-4 py-5 sm:px-5"
+      className="overflow-hidden border-y border-rule bg-paper-raised"
     >
-      <div><p className="text-xs uppercase tracking-[0.14em] text-ink-muted">New leaf</p><h2 className="mt-1 font-serif text-xl">Add a page</h2></div>
+      <div className="grid lg:grid-cols-[minmax(15rem,0.7fr)_minmax(0,1.6fr)]">
+        <header className="relative overflow-hidden border-b border-rule bg-paper px-6 py-7 lg:border-b-0 lg:border-r lg:px-7 lg:py-8">
+          <span
+            aria-hidden
+            className="absolute -right-2 -top-7 font-serif text-[8rem] leading-none text-paper-deep"
+          >
+            01
+          </span>
+          <div className="relative">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-accent">
+              New leaf
+            </p>
+            <h2 className="mt-2 font-serif text-3xl leading-none">Add a page</h2>
+            <p className="mt-4 max-w-[30ch] text-sm leading-6 text-ink-muted">
+              Pair the printed page number with a clear photograph. You can
+              straighten its edges before saving.
+            </p>
+          </div>
+        </header>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span>Page number</span>
-          <input
-            name="pageNumber"
-            type="number"
-            required
-            className="w-28 border border-rule bg-paper px-3 py-2 outline-none focus:border-accent"
-          />
-        </label>
+        <div className="flex min-w-0 flex-col">
+          <div className="grid gap-5 px-6 py-6 sm:grid-cols-[9rem_minmax(0,1fr)] sm:px-7 sm:py-7">
+            <label className="flex flex-col gap-2 text-sm">
+              <span className="text-xs font-medium uppercase tracking-[0.12em] text-ink-muted">
+                Page number
+              </span>
+              <input
+                name="pageNumber"
+                type="number"
+                required
+                placeholder="317"
+                className="h-14 w-full border border-rule bg-paper px-4 font-serif text-xl tabular-nums outline-none transition-colors focus:border-accent"
+              />
+            </label>
 
-        <label className="flex flex-col gap-1 text-sm">
-          <span>Photograph</span>
-          <input
-            name="file"
-            type="file"
-            accept={ACCEPTED_CONTENT_TYPES.join(",")}
-            required
-            onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
-            className="text-sm"
-          />
-        </label>
-
+            <label className="flex min-w-0 flex-col gap-2 text-sm">
+              <span className="text-xs font-medium uppercase tracking-[0.12em] text-ink-muted">
+                Photograph
+              </span>
+              <span className="relative flex h-14 min-w-0 cursor-pointer items-center gap-3 border border-rule bg-paper px-4 transition-colors hover:border-ink-muted">
+                <input
+                  ref={fileInputRef}
+                  name="file"
+                  type="file"
+                  accept={ACCEPTED_CONTENT_TYPES.join(",")}
+                  required
+                  onChange={(event) =>
+                    chooseFile(event.target.files?.[0] ?? null)
+                  }
+                  className="absolute inset-0 size-full cursor-pointer opacity-0"
+                />
+                <svg
+                  aria-hidden
+                  viewBox="0 0 24 24"
+                  className="size-5 shrink-0 fill-none stroke-current text-accent"
+                  strokeWidth="1.6"
+                >
+                  <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" />
+                  <path d="M5 14v5h14v-5" />
+                </svg>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">
+                    {chosen ? chosen.file.name : "Choose a photograph"}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-ink-muted">
+                    {chosen
+                      ? `${(chosen.file.size / 1024 / 1024).toFixed(1)} MB selected`
+                      : "JPEG, PNG or WebP · up to 10 MB"}
+                  </span>
+                </span>
+                <span className="hidden text-xs font-medium text-accent sm:block">
+                  Browse
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
       </div>
 
-
       {chosen ? (
-
-        <div className="flex flex-col gap-3">
-
-          <label className="flex items-center gap-2 text-xs uppercase tracking-[0.1em] text-ink-muted">
-
-            <input
-
-              type="checkbox"
-
-              checked={straighten}
-
-              onChange={(event) => setStraighten(event.target.checked)}
-
-              className="accent-accent"
-
-            />
-
-            Straighten the page
-
-          </label>
-
+        <div className="border-t border-rule px-6 py-6 sm:px-7">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-ink-muted">
+                Page alignment
+              </p>
+              <p className="mt-1 text-sm text-ink-muted">
+                Drag the four handles if the suggested crop needs adjustment.
+              </p>
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 border border-rule bg-paper px-3 py-2 text-xs font-medium uppercase tracking-[0.08em] text-ink-muted">
+              <input
+                type="checkbox"
+                checked={straighten}
+                onChange={(event) => setStraighten(event.target.checked)}
+                className="accent-accent"
+              />
+              Straighten page
+            </label>
+          </div>
 
           {straighten ? (
-
             <CornerPicker
-
               imageUrl={chosen.url}
-
               corners={corners}
-
               onChange={setCorners}
-
             />
-
           ) : null}
-
         </div>
-
       ) : null}
 
-
-      <div className="flex flex-wrap items-end gap-3">
-
+      <div className="flex min-h-16 flex-wrap items-center justify-between gap-4 border-t border-rule bg-paper/45 px-6 py-3 sm:px-7">
+        <div className="min-w-0 flex-1">
+          {state.status === "working" ? (
+            <p role="status" className="text-sm text-ink-muted">
+              {state.step}
+            </p>
+          ) : state.status === "error" ? (
+            <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">
+              {state.message}
+            </p>
+          ) : (
+            <p className="text-xs text-ink-muted">
+              The original photograph stays private.
+            </p>
+          )}
+        </div>
 
         <button
           type="submit"
           disabled={isWorking}
-          className="bg-accent px-4 py-2 text-sm font-medium text-paper disabled:opacity-60"
+          className="inline-flex min-w-32 items-center justify-center gap-3 bg-accent px-5 py-2.5 text-sm font-medium text-paper transition-colors hover:bg-danger disabled:cursor-wait disabled:opacity-60"
         >
-          {isWorking ? "Working…" : "Upload"}
+          {isWorking ? "Working…" : "Upload page"}
+          <span aria-hidden className="text-base leading-none">
+            →
+          </span>
         </button>
       </div>
-
-      {state.status === "working" ? (
-        <p role="status" className="text-sm text-ink-muted">
-          {state.step}
-        </p>
-      ) : null}
-
-      {state.status === "error" ? (
-        <p role="alert" className="text-sm text-danger">
-          {state.message}
-        </p>
-      ) : null}
     </form>
   );
 }

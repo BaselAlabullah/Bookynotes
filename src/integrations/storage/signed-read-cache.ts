@@ -13,8 +13,10 @@ import { createSignedReads } from "./storage.client";
  *   seen, so every navigation re-downloaded images it already had. **A URL that
  *   changes each render is a cache that never hits.**
  *
- * Ten minutes, against the fifteen minute lifetime of the URLs themselves, so a
- * cached URL is always handed out with at least five minutes left.
+ * Five minutes, against the fifteen minute lifetime of the URLs themselves, so
+ * ordinary traffic starts revalidation while roughly ten minutes remain. The
+ * recovery path still handles a stale-while-revalidate response that has lived
+ * longer than that window.
  *
  * What is cached is an answer, never a permission. Every caller has already
  * proved ownership of the rows before reaching here, and storage keys begin
@@ -37,7 +39,7 @@ export async function signedReadUrls(
   const entries = await unstable_cache(
     async () => [...(await createSignedReads(sorted))],
     ["signed-reads", ...sorted],
-    { revalidate: 600 },
+    { revalidate: 300 },
   )();
 
   return new Map(entries);

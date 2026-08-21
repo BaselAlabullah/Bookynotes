@@ -2,15 +2,15 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useRef,
   useState,
-  useSyncExternalStore,
   type ImgHTMLAttributes,
 } from "react";
 
 const RETRY_DELAYS_MS = [300, 800, 1_600, 3_000] as const;
-const subscribeToNothing = () => () => undefined;
+const inFlightSignedUrls = new Map<string, Promise<string | null>>();
 
 type ResilientImageProps = Omit<
   ImgHTMLAttributes<HTMLImageElement>,
@@ -30,6 +30,30 @@ function readSignedUrl(body: unknown): string | null {
   return typeof body.url === "string" ? body.url : null;
 }
 
+/** Concurrent failures for the same object share one signing request. */
+function freshSignedUrl(storageKey: string): Promise<string | null> {
+  const existing = inFlightSignedUrls.get(storageKey);
+  if (existing) return existing;
+
+  const request = (async () => {
+    const response = await fetch(
+      `/api/storage/read-url?key=${encodeURIComponent(storageKey)}`,
+      { cache: "no-store" },
+    ).catch(() => null);
+
+    if (!response?.ok) return null;
+    return readSignedUrl(await response.json().catch(() => null));
+  })();
+  const tracked = request.finally(() => {
+    if (inFlightSignedUrls.get(storageKey) === tracked) {
+      inFlightSignedUrls.delete(storageKey);
+    }
+  });
+
+  inFlightSignedUrls.set(storageKey, tracked);
+  return tracked;
+}
+
 /**
  * Renews a private image URL that expired while its server-rendered route sat
  * in the client cache. A distinct query value also prevents a transient failed
@@ -42,19 +66,52 @@ export const ResilientImage = forwardRef<HTMLImageElement, ResilientImageProps>(
   ) {
     const [attempt, setAttempt] = useState(0);
     const [activeSrc, setActiveSrc] = useState(src);
+    const imageRef = useRef<HTMLImageElement | null>(null);
     const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    // Do not let the browser request a possibly stale server-rendered URL
-    // before React has attached the error handler that can renew it.
-    const isHydrated = useSyncExternalStore(
-      subscribeToNothing,
-      () => true,
-      () => false,
+
+    const setImageRef = useCallback(
+      (node: HTMLImageElement | null) => {
+        imageRef.current = node;
+
+        if (typeof ref === "function") ref(node);
+        else if (ref) ref.current = node;
+      },
+      [ref],
     );
+
+    const recover = useCallback(() => {
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (delay === undefined || retryTimer.current) return;
+
+      retryTimer.current = setTimeout(() => {
+        retryTimer.current = null;
+        const nextAttempt = attempt + 1;
+
+        void (async () => {
+          const renewedSrc = storageKey
+            ? await freshSignedUrl(storageKey)
+            : null;
+          const nextSrc = renewedSrc ?? src;
+
+          setActiveSrc(
+            `${nextSrc}${nextSrc.includes("?") ? "&" : "?"}bookynotes_image_retry=${nextAttempt}`,
+          );
+          setAttempt(nextAttempt);
+        })();
+      }, delay);
+    }, [attempt, src, storageKey]);
 
     useEffect(() => {
       setAttempt(0);
       setActiveSrc(src);
     }, [src]);
+
+    useEffect(() => {
+      // The preload scanner may finish a failed request before React hydrates
+      // and attaches onError. The DOM retains that outcome for us to inspect.
+      const image = imageRef.current;
+      if (image?.complete && image.naturalWidth === 0) recover();
+    }, [recover]);
 
     useEffect(
       () => () => {
@@ -69,46 +126,18 @@ export const ResilientImage = forwardRef<HTMLImageElement, ResilientImageProps>(
       // eslint-disable-next-line @next/next/no-img-element
       <img
         {...props}
-        ref={ref}
+        ref={setImageRef}
         alt={alt}
-        src={isHydrated ? activeSrc : undefined}
+        src={activeSrc}
         onLoad={(event) => {
           if (retryTimer.current) clearTimeout(retryTimer.current);
           retryTimer.current = null;
+          setAttempt(0);
           onLoad?.(event);
         }}
         onError={(event) => {
           onError?.(event);
-          const delay = RETRY_DELAYS_MS[attempt];
-
-          if (delay === undefined || retryTimer.current) return;
-
-          retryTimer.current = setTimeout(() => {
-            retryTimer.current = null;
-            const nextAttempt = attempt + 1;
-
-            void (async () => {
-              let nextSrc = src;
-
-              if (storageKey) {
-                const response = await fetch(
-                  `/api/storage/read-url?key=${encodeURIComponent(storageKey)}`,
-                  { cache: "no-store" },
-                ).catch(() => null);
-
-                if (response?.ok) {
-                  nextSrc =
-                    readSignedUrl(await response.json().catch(() => null)) ??
-                    nextSrc;
-                }
-              }
-
-              setActiveSrc(
-                `${nextSrc}${nextSrc.includes("?") ? "&" : "?"}bookynotes_image_retry=${nextAttempt}`,
-              );
-              setAttempt(nextAttempt);
-            })();
-          }, delay);
+          recover();
         }}
       />
     );

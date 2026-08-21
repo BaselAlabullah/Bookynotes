@@ -2179,7 +2179,30 @@ and pages until a full reload obtains fresh credentials.
 fresh signed URL for its user-owned storage key, then retries with short,
 increasing delays. The route never signs a key outside the current user's
 prefix, returns no-store responses, and the image stops after four attempts.
+Concurrent recovery for the same key shares one request.
 
 **Why.** Re-signing the failed resource fixes the expired credential directly;
 replaying the old URL or refreshing the whole page does not. The fixed limit
 preserves a real missing-image failure instead of polling indefinitely.
+
+The ordinary path still renders `src` during SSR so the preload scanner,
+`fetchPriority`, eager loading and no-JavaScript rendering keep working. If that
+request fails before hydration attaches `onError`, the component detects the
+recorded DOM state (`complete` with zero intrinsic width) on mount. Signed URLs
+live for fifteen minutes and are now cached for five, not ten, so ordinary
+traffic begins background revalidation with roughly ten minutes remaining.
+Because time-based revalidation may serve one stale response while refreshing,
+recovery remains the safety net for an unusually old entry.
+
+---
+
+## 0086 — Page upload is a compact sequence, not a loose form
+
+The book view groups page metadata and photograph selection into one compact
+editorial panel. File type, size and privacy guidance sit beside the control
+they explain; progress and the primary action share a stable footer. Alignment
+controls remain hidden until a photograph exists, then appear before the upload
+action so the visual order matches the task order.
+
+This keeps the common empty state concise without hiding the existing corner
+correction workflow when it becomes relevant.
