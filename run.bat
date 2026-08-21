@@ -51,14 +51,15 @@ if not exist "node_modules" (
 )
 
 REM ---------------------------------------------------------------------------
-REM  Is anything already holding the ports?
+REM  Clear stale app servers before starting fresh.
 REM
 REM  A stale server serving an old build is a genuinely confusing failure - the
-REM  code changes and the browser does not - so it is worth naming up front.
+REM  code changes and the browser does not. This script owns the app's dev
+REM  ports, so it frees them every time before launching new windows.
 REM ---------------------------------------------------------------------------
 
-call :check_port 3000 "web"
-call :check_port 8000 "page-processor"
+call :stop_port 3000 "web"
+call :stop_port 8000 "page-processor"
 
 REM ---------------------------------------------------------------------------
 REM  The page-processor's secret, read from .env.local so there is one copy of
@@ -136,13 +137,15 @@ REM  log or launched by another tool. ping just waits.
 ping -n %~1 127.0.0.1 >nul 2>&1
 exit /b 0
 
-:check_port
-netstat -ano | findstr /r /c:"LISTENING" | findstr /c:":%~1 " >nul 2>&1
-if not errorlevel 1 (
-    echo   [!] Something is already listening on port %~1 ^(%~2^).
-    echo       If pages look out of date, that is probably a stale server.
-    echo       Stop it with:  npx kill-port %~1
-    echo.
+:stop_port
+set "FOUND_PORT="
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr /r /c:"LISTENING" ^| findstr /c:":%~1 "') do (
+    set "FOUND_PORT=1"
+    echo   [^>] stopping existing %~2 server on port %~1 ^(PID %%p^)
+    taskkill /PID %%p /T /F >nul 2>&1
+)
+if defined FOUND_PORT (
+    call :wait 2
 )
 exit /b 0
 

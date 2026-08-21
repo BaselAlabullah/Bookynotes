@@ -74,9 +74,22 @@ export type CreateTextAnnotationInput = z.infer<
   typeof createTextAnnotationSchema
 >;
 
+export const updateAnnotationSchema = z.object({
+  annotationId: z.uuid().transform(asAnnotationId),
+  userComment: z.string().trim().max(2000).default(""),
+  extractedPassage: z.string().trim().max(10_000).default(""),
+  extractedContext: z.string().trim().max(10_000).default(""),
+});
+
+export type UpdateAnnotationInput = z.infer<typeof updateAnnotationSchema>;
+
 export type CreateAnnotationResult = {
   error: string | null;
   createdId: string | null;
+};
+
+export type UpdateAnnotationResult = {
+  error: string | null;
 };
 
 /**

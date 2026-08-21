@@ -2,10 +2,13 @@ import type { UserId } from "@/db/ids";
 import { findPage } from "@/features/pages/pages.repository";
 
 import {
+  findAnnotation,
   insertAnnotation,
   insertTextAnnotation,
+  updateAnnotationContent,
 } from "./annotations.repository";
 import { contextAround, rangeStillMatches } from "./annotations.text";
+import type { UpdateAnnotationInput } from "./annotations.schema";
 import type {
   Annotation,
   NewAnnotation,
@@ -89,4 +92,32 @@ export async function createTextAnnotation(
   );
 
   return { status: "created", annotation };
+}
+
+export type UpdateAnnotationResult =
+  | { status: "updated"; annotation: Annotation }
+  /** The annotation is missing, or is not this user's. */
+  | { status: "not-found" };
+
+export async function updateAnnotation(
+  userId: UserId,
+  input: UpdateAnnotationInput,
+): Promise<UpdateAnnotationResult> {
+  const annotation = await findAnnotation(userId, input.annotationId);
+
+  if (!annotation) {
+    return { status: "not-found" };
+  }
+
+  const extractedPassage = input.extractedPassage.trim() || null;
+  const extractedContext = input.extractedContext.trim() || null;
+  const hasExtraction = extractedPassage !== null || extractedContext !== null;
+  const updated = await updateAnnotationContent(userId, input.annotationId, {
+    userComment: input.userComment,
+    extractedPassage,
+    extractedContext,
+    enrichmentStatus: hasExtraction ? "complete" : annotation.enrichmentStatus,
+  });
+
+  return updated ? { status: "updated", annotation: updated } : { status: "not-found" };
 }

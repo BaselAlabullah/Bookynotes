@@ -11,6 +11,13 @@ import type {
   NewTextAnnotation,
 } from "./annotations.types";
 
+type AnnotationContentUpdate = {
+  userComment: string;
+  extractedPassage: string | null;
+  extractedContext: string | null;
+  enrichmentStatus: Annotation["enrichmentStatus"];
+};
+
 /**
  * Every query against the `annotations` table.
  *
@@ -183,6 +190,29 @@ export async function resetEnrichment(
     .set({
       enrichmentStatus: "pending",
       retryCount: 0,
+      enrichmentError: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(eq(annotations.id, annotationId), eq(annotations.userId, userId)),
+    )
+    .returning();
+
+  return updated ?? null;
+}
+
+export async function updateAnnotationContent(
+  userId: UserId,
+  annotationId: AnnotationId,
+  input: AnnotationContentUpdate,
+): Promise<Annotation | null> {
+  const [updated] = await db
+    .update(annotations)
+    .set({
+      userComment: input.userComment,
+      extractedPassage: input.extractedPassage,
+      extractedContext: input.extractedContext,
+      enrichmentStatus: input.enrichmentStatus,
       enrichmentError: null,
       updatedAt: new Date(),
     })

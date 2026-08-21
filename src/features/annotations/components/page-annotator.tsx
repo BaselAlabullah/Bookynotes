@@ -5,7 +5,10 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 
 import type { PageId } from "@/db/ids";
 
-import { createAnnotationAction } from "../annotations.actions";
+import {
+  createAnnotationAction,
+  updateAnnotationAction,
+} from "../annotations.actions";
 import { enrichResponseSchema } from "../annotations.schema";
 import {
   isRegionAnnotation,
@@ -29,6 +32,12 @@ type PageAnnotatorProps = {
 
 /** 1 means the whole page is visible; larger steps widen the image wrapper. */
 const ZOOM_STEPS = [1, 1.5, 2, 3, 4] as const;
+
+type AnnotationEditDraft = {
+  userComment: string;
+  extractedPassage: string;
+  extractedContext: string;
+};
 
 function formatPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
@@ -67,7 +76,15 @@ export function PageAnnotator({
   const [isMarginOpen, setIsMarginOpen] = useState(true);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<AnnotationEditDraft>({
+    userComment: "",
+    extractedPassage: "",
+    extractedContext: "",
+  });
   const [isSaving, startSaving] = useTransition();
+  const [isUpdating, startUpdating] = useTransition();
   const [enriching, setEnriching] = useState<ReadonlySet<string>>(new Set());
 
   const zoom = ZOOM_STEPS[zoomIndex] ?? 1;
@@ -191,6 +208,49 @@ export function PageAnnotator({
     });
   }
 
+  function startEdit(annotation: Annotation) {
+    setEditingId(annotation.id);
+    setEditError(null);
+    setEditDraft({
+      userComment: annotation.userComment,
+      extractedPassage: annotation.extractedPassage ?? "",
+      extractedContext: annotation.extractedContext ?? "",
+    });
+    setSelectedId(annotation.id);
+    setIsMarginOpen(true);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditError(null);
+    setEditDraft({
+      userComment: "",
+      extractedPassage: "",
+      extractedContext: "",
+    });
+  }
+
+  function saveEdit(annotationId: string) {
+    setEditError(null);
+
+    startUpdating(async () => {
+      const result = await updateAnnotationAction({
+        annotationId,
+        userComment: editDraft.userComment,
+        extractedPassage: editDraft.extractedPassage,
+        extractedContext: editDraft.extractedContext,
+      });
+
+      if (result.error) {
+        setEditError(result.error);
+        return;
+      }
+
+      cancelEdit();
+      router.refresh();
+    });
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="screen-only flex flex-wrap items-center gap-x-5 gap-y-3 border-y border-rule py-2.5">
@@ -270,14 +330,28 @@ export function PageAnnotator({
                     >
                       <span className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] ${isActive ? "bg-accent text-paper" : "border border-accent text-accent"}`}>{index + 1}</span>
                       <div className="min-w-0 flex-1">
-                        <button type="button" onClick={() => setSelectedId(annotation.id)} className="block w-full text-left">
-                          <span className={`block text-sm leading-6 ${annotation.userComment ? "text-ink" : "italic text-ink-muted"}`}>{annotation.userComment || "No note was added."}</span>
-                          <AnnotationExtraction annotation={annotation} isEnriching={enriching.has(annotation.id)} />
-                        </button>
-                        <AnnotationEnrichmentAction annotation={annotation} isEnriching={enriching.has(annotation.id)} onEnrich={enrich} />
-                        <div className="mt-3">
-                          <DeleteAnnotationButton id={annotation.id} />
-                        </div>
+                        {editingId === annotation.id ? (
+                          <AnnotationEditForm
+                            draft={editDraft}
+                            error={editError}
+                            isSaving={isUpdating}
+                            onChange={setEditDraft}
+                            onCancel={cancelEdit}
+                            onSave={() => saveEdit(annotation.id)}
+                          />
+                        ) : (
+                          <>
+                            <button type="button" onClick={() => setSelectedId(annotation.id)} className="block w-full text-left">
+                              <span className={`block text-sm leading-6 ${annotation.userComment ? "text-ink" : "italic text-ink-muted"}`}>{annotation.userComment || "No note was added."}</span>
+                              <AnnotationExtraction annotation={annotation} isEnriching={enriching.has(annotation.id)} />
+                            </button>
+                            <AnnotationEnrichmentAction annotation={annotation} isEnriching={enriching.has(annotation.id)} onEnrich={enrich} />
+                            <div className="mt-3 flex flex-wrap items-center gap-3">
+                              <button type="button" onClick={() => startEdit(annotation)} className="text-xs text-ink-muted underline decoration-rule underline-offset-4 hover:text-ink">Edit note/extraction</button>
+                              <DeleteAnnotationButton id={annotation.id} />
+                            </div>
+                          </>
+                        )}
                       </div>
                     </li>
                   );
@@ -305,6 +379,87 @@ function AnnotationExtraction({ annotation, isEnriching }: { annotation: Annotat
       {annotation.extractedPassage ? <span className="font-serif text-[0.95rem] leading-6 text-ink-muted">“{annotation.extractedPassage}”</span> : null}
       {annotation.extractedContext ? <span className="text-xs leading-5 text-ink-muted">{annotation.extractedContext}</span> : null}
     </span>
+  );
+}
+
+function AnnotationEditForm({
+  draft,
+  error,
+  isSaving,
+  onChange,
+  onCancel,
+  onSave,
+}: {
+  draft: AnnotationEditDraft;
+  error: string | null;
+  isSaving: boolean;
+  onChange: (draft: AnnotationEditDraft) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <section className="flex flex-col gap-3 border-y border-accent/50 py-3">
+      <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.12em] text-ink-muted">
+        Note
+        <textarea
+          value={draft.userComment}
+          onChange={(event) =>
+            onChange({ ...draft, userComment: event.target.value })
+          }
+          rows={3}
+          className="resize-y border border-rule bg-paper-raised px-3 py-2 text-sm normal-case leading-6 tracking-normal text-ink outline-none focus:border-accent"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.12em] text-ink-muted">
+        Passage
+        <textarea
+          value={draft.extractedPassage}
+          onChange={(event) =>
+            onChange({ ...draft, extractedPassage: event.target.value })
+          }
+          rows={3}
+          className="resize-y border border-rule bg-paper-raised px-3 py-2 font-serif text-sm normal-case leading-6 tracking-normal text-ink outline-none focus:border-accent"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.12em] text-ink-muted">
+        Context
+        <textarea
+          value={draft.extractedContext}
+          onChange={(event) =>
+            onChange({ ...draft, extractedContext: event.target.value })
+          }
+          rows={3}
+          className="resize-y border border-rule bg-paper-raised px-3 py-2 text-sm normal-case leading-6 tracking-normal text-ink outline-none focus:border-accent"
+        />
+      </label>
+
+      {error ? (
+        <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={isSaving}
+          className="bg-accent px-4 py-2 text-sm font-medium text-paper disabled:opacity-60"
+        >
+          {isSaving ? "Saving..." : "Save edits"}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={isSaving}
+          className="text-sm text-ink-muted underline decoration-rule underline-offset-4 hover:text-ink disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </section>
   );
 }
 

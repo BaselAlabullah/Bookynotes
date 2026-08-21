@@ -4,11 +4,17 @@ import { revalidatePath } from "next/cache";
 
 import { requireUser } from "@/features/auth/auth.session";
 
-import { createAnnotation, createTextAnnotation } from "./annotations.service";
+import {
+  createAnnotation,
+  createTextAnnotation,
+  updateAnnotation,
+} from "./annotations.service";
 import {
   createAnnotationSchema,
   createTextAnnotationSchema,
   type CreateAnnotationResult,
+  type UpdateAnnotationResult,
+  updateAnnotationSchema,
 } from "./annotations.schema";
 import { deleteAnnotationSchema } from "./annotations.schema";
 import { deleteAnnotation } from "./annotations.repository";
@@ -112,6 +118,30 @@ export async function createTextAnnotationAction(
   revalidatePath("/books", "layout");
 
   return { error: null, createdId: result.annotation.id };
+}
+
+export async function updateAnnotationAction(
+  input: unknown,
+): Promise<UpdateAnnotationResult> {
+  const user = await requireUser();
+  const parsed = updateAnnotationSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      error:
+        parsed.error.issues[0]?.message ?? "That annotation is not valid.",
+    };
+  }
+
+  const result = await updateAnnotation(user.id, parsed.data);
+
+  if (result.status === "not-found") {
+    return { error: "That annotation could not be found." };
+  }
+
+  revalidatePath("/books", "layout");
+
+  return { error: null };
 }
 
 export async function deleteAnnotationAction(formData: FormData): Promise<void> {
