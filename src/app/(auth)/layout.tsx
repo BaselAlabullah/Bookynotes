@@ -1,3 +1,5 @@
+import Image from "next/image";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
@@ -20,17 +22,27 @@ export default async function AuthLayout({
   }
 
   return (
-    <main className="grid min-h-dvh lg:grid-cols-[minmax(18rem,0.8fr)_1.2fr]">
-      <aside className="relative hidden overflow-hidden border-r border-ink bg-paper-raised p-10 lg:flex lg:flex-col lg:justify-between">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em]">Bookynotes</p>
-        <span aria-hidden className="absolute -left-8 top-1/2 -translate-y-1/2 font-serif text-[28rem] leading-none text-paper-deep">M</span>
-        <p className="relative max-w-[24ch] font-serif text-4xl leading-tight">Keep the thought beside the words that prompted it.</p>
-        <p className="relative text-xs uppercase tracking-[0.14em] text-ink-muted">Annotation for physical books</p>
-      </aside>
-      <div className="mx-auto flex min-w-0 w-[calc(100%_-_3rem)] max-w-md flex-col justify-center gap-8 py-12 sm:w-full sm:px-10">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] lg:hidden">Bookynotes</p>
-        {children}
-      </div>
+    <main className="flex min-h-dvh items-center justify-center px-5 py-12 sm:px-8">
+      <section className="w-full max-w-md">
+        <Link
+          href="/"
+          aria-label="Bookynotes home"
+          className="mx-auto mb-1 block w-80 max-w-full sm:w-96"
+        >
+          <Image
+            src="/brand/bookynotes-logo-sketch.svg"
+            alt="Bookynotes"
+            width={1800}
+            height={600}
+            priority
+            className="h-auto w-full"
+          />
+        </Link>
+
+        <div className="border-y border-rule bg-paper/60 py-8">
+          {children}
+        </div>
+      </section>
     </main>
   );
 }

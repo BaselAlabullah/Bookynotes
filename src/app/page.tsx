@@ -16,12 +16,12 @@ export default async function HomePage() {
         >
           <span className="relative flex size-9 shrink-0 overflow-hidden">
             <Image
-              src="/brand/bookynotes-logo.png"
+              src="/brand/bookynotes-icon-sketch.svg"
               alt=""
-              width={1254}
-              height={1254}
+              width={400}
+              height={400}
               priority
-              className="size-full scale-[1.65] object-contain"
+              className="size-full object-contain"
             />
           </span>
           <span className="text-xs font-semibold uppercase tracking-[0.22em]">

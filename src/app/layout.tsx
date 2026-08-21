@@ -14,8 +14,8 @@ export const metadata: Metadata = {
   title: "Bookynotes",
   description: "Annotate photographs of physical book pages and search them.",
   icons: {
-    icon: "/brand/bookynotes-logo.png",
-    apple: "/brand/bookynotes-logo.png",
+    icon: "/brand/bookynotes-icon-sketch.svg",
+    apple: "/brand/bookynotes-icon-sketch.svg",
   },
 };
 

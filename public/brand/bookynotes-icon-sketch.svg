@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-labelledby="title desc">
+  <title id="title">Bookynotes icon</title>
+  <desc id="desc">Hand-sketched notebook page with folded corner, margin annotation mark, underline, and handwritten note.</desc>
+
+  <defs>
+    <filter id="roughInk" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018 0.025" numOctaves="2" seed="17" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="0.85" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="roughFine" x="-6%" y="-6%" width="112%" height="112%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="1" seed="11" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="0.35" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+
+
+  <g id="bookynotesIcon">
+    <!-- page body -->
+    <path d="M 70 40
+             C 48 42, 36 59, 36 84
+             L 36 316
+             C 36 345, 55 365, 84 366
+             L 316 366
+             C 344 366, 363 347, 364 319
+             L 364 138
+             C 364 121, 357 109, 346 99
+             L 307 60
+             C 297 50, 286 42, 270 41
+             Z"
+          fill="#F5EEDF" stroke="#24231F" stroke-width="5.4" stroke-linejoin="round" filter="url(#roughInk)"/>
+
+    <!-- darker sketch reinforcement on left and bottom edges -->
+    <path d="M 67 43 C 46 50, 40 66, 40 88 L 40 315 C 40 340, 56 359, 83 361"
+          fill="none" stroke="#24231F" stroke-width="8.5" stroke-linecap="round" opacity="0.72" filter="url(#roughFine)"/>
+    <path d="M 83 361 C 151 364, 232 363, 318 362"
+          fill="none" stroke="#24231F" stroke-width="7.8" stroke-linecap="round" opacity="0.68" filter="url(#roughFine)"/>
+
+    <!-- folded corner -->
+    <path d="M 270 42
+             C 273 74, 270 94, 279 104
+             C 289 116, 308 116, 330 118
+             C 344 120, 355 127, 364 138
+             C 355 117, 341 103, 324 86
+             L 300 62
+             C 291 53, 282 46, 270 42 Z"
+          fill="#EEE3D2" stroke="#24231F" stroke-width="3.3" stroke-linejoin="round" opacity="0.97" filter="url(#roughFine)"/>
+    <path d="M 278 108 C 296 117, 322 111, 348 124"
+          fill="none" stroke="#24231F" stroke-width="2" opacity="0.35" stroke-linecap="round" filter="url(#roughFine)"/>
+
+    <!-- margin line -->
+    <path d="M 91 48 C 90 124, 92 205, 91 356"
+          fill="none" stroke="#B84A3A" stroke-width="2.8" stroke-linecap="round" opacity="0.95" filter="url(#roughFine)"/>
+    <circle cx="91" cy="184" r="9.5" fill="#B84A3A" opacity="0.96" filter="url(#roughFine)"/>
+    <circle cx="89.5" cy="182.5" r="7" fill="none" stroke="#9F3B30" stroke-width="1.2" opacity="0.45"/>
+
+    <!-- quiet text lines -->
+    <g fill="none" stroke="#A6A095" stroke-width="3" stroke-linecap="round" opacity="0.56" filter="url(#roughFine)">
+      <path d="M 135 156 C 177 155, 218 155, 267 156"/>
+      <path d="M 136 177 C 183 176, 228 178, 289 177"/>
+      <path d="M 136 198 C 181 199, 222 197, 274 198"/>
+      <path d="M 136 219 C 187 218, 236 220, 290 219"/>
+    </g>
+
+    <!-- annotated underline -->
+    <path d="M 135 239 C 165 238, 196 240, 222 239"
+          fill="none" stroke="#B84A3A" stroke-width="4.2" stroke-linecap="round" opacity="0.95" filter="url(#roughInk)"/>
+    <path d="M 137 241 C 163 239, 194 241, 219 240"
+          fill="none" stroke="#D16655" stroke-width="1.15" stroke-linecap="round" opacity="0.58"/>
+
+    <!-- handwritten marginal-note gesture -->
+    <path d="M 183 286
+             C 194 270, 208 257, 221 250
+             C 227 247, 228 253, 224 261
+             C 219 272, 209 286, 205 296
+             C 203 302, 210 296, 215 291
+             C 222 283, 226 279, 227 285
+             C 228 291, 224 299, 229 296
+             C 236 292, 240 283, 243 287
+             C 249 295, 260 294, 275 286
+             L 302 272"
+          fill="none" stroke="#24231F" stroke-width="3.7" stroke-linecap="round" stroke-linejoin="round" filter="url(#roughInk)"/>
+  </g>
+
+</svg>

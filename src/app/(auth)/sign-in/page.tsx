@@ -20,10 +20,13 @@ export default async function SignInPage({
 
   return (
     <>
-      <header className="flex flex-col gap-2">
-        <h1 className="font-serif text-3xl">Sign in</h1>
+      <header className="flex flex-col items-center gap-2 text-center">
+        <p className="text-xs uppercase tracking-[0.18em] text-accent">
+          Welcome back
+        </p>
+        <h1 className="font-serif text-3xl">Return to your margins</h1>
         <p className="text-sm text-ink-muted">
-          Your library and every note in it.
+          Your library is right where you left it.
         </p>
       </header>
 
