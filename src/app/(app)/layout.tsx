@@ -1,8 +1,8 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { requireUser } from "@/features/auth/auth.session";
-import { findProfile } from "@/features/auth/profiles.repository";
 import { SignOutButton } from "@/features/auth/components/sign-out-button";
 
 /**
@@ -18,40 +18,83 @@ export default async function AppLayout({
 }: {
   children: ReactNode;
 }) {
-  const user = await requireUser();
-  // The username if they have one, the email if they signed up before usernames
-  // existed. Request-cached, so a page below can ask for it without a second
-  // query.
-  const profile = await findProfile(user.id);
+  await requireUser();
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[96rem] flex-col px-4 sm:px-6 lg:px-8">
-      <header className="app-header flex min-h-20 flex-wrap items-center gap-x-6 gap-y-3 border-b border-ink py-3">
-        <div className="flex items-baseline gap-5">
-          <Link href="/library" className="text-xs font-semibold uppercase tracking-[0.22em]">
-            Bookynotes
+      <header className="app-header border-b border-rule py-4">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <Link
+            href="/library"
+            className="flex min-w-0 items-center gap-3"
+            aria-label="Bookynotes library"
+          >
+            <span className="relative flex size-9 shrink-0 overflow-hidden">
+              <Image
+                src="/brand/bookynotes-logo.png"
+                alt=""
+                width={1254}
+                height={1254}
+                priority
+                className="size-full scale-[1.65] object-contain"
+              />
+            </span>
+            <span className="flex min-w-0 flex-col">
+              <span className="text-xs font-semibold uppercase tracking-[0.32em] text-ink">
+                Bookynotes
+              </span>
+              <span className="hidden text-xs text-ink-muted md:block">
+                Margins for physical books
+              </span>
+            </span>
           </Link>
-          <span aria-hidden className="hidden h-4 border-l border-rule sm:block" />
-          <Link href="/library" className="hidden text-xs text-ink-muted hover:text-ink sm:block">
-            Library
-          </Link>
-        </div>
 
-        <form action="/search" method="get" className="order-3 flex w-full sm:order-none sm:ml-auto sm:w-72">
-          <label htmlFor="global-search" className="sr-only">Search annotations</label>
-          <div className="flex w-full items-center border-b border-rule focus-within:border-accent">
-            <svg aria-hidden viewBox="0 0 20 20" className="size-4 shrink-0 fill-none stroke-current text-ink-muted" strokeWidth="1.5">
-              <circle cx="8.5" cy="8.5" r="5.5" />
-              <path d="m12.5 12.5 4 4" />
-            </svg>
-            <input id="global-search" name="q" type="search" placeholder="Search your notes" className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm outline-none" />
-            <kbd className="text-[10px] text-ink-muted">/</kbd>
+          <nav
+            aria-label="Primary"
+            className="order-3 flex w-full items-center gap-5 border-t border-rule pt-3 text-xs uppercase tracking-[0.14em] text-ink-muted sm:order-none sm:w-auto sm:border-t-0 sm:pt-0"
+          >
+            <Link href="/library" className="transition-colors hover:text-ink">
+              Library
+            </Link>
+            <Link href="/search" className="transition-colors hover:text-ink">
+              Search
+            </Link>
+          </nav>
+
+          <form
+            action="/search"
+            method="get"
+            className="order-4 flex w-full sm:order-none sm:ml-auto sm:w-80 lg:w-96"
+          >
+            <label htmlFor="global-search" className="sr-only">
+              Search annotations
+            </label>
+            <div className="flex w-full items-center border-b border-rule transition-colors focus-within:border-accent">
+              <svg
+                aria-hidden
+                viewBox="0 0 20 20"
+                className="size-4 shrink-0 fill-none stroke-current text-ink-muted"
+                strokeWidth="1.6"
+              >
+                <circle cx="8.5" cy="8.5" r="5.5" />
+                <path d="m12.5 12.5 4 4" />
+              </svg>
+              <input
+                id="global-search"
+                name="q"
+                type="search"
+                placeholder="Search notes"
+                className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-ink-muted/75"
+              />
+              <kbd className="hidden pl-2 text-[10px] text-ink-muted sm:block">
+                /
+              </kbd>
+            </div>
+          </form>
+
+          <div className="ml-auto flex items-center sm:ml-0">
+            <SignOutButton />
           </div>
-        </form>
-
-        <div className="ml-auto flex items-center gap-3 sm:ml-0">
-          <span className="hidden max-w-44 truncate text-xs text-ink-muted lg:block">{profile?.username ?? user.email}</span>
-          <SignOutButton />
         </div>
       </header>
 

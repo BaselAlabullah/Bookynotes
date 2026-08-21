@@ -8,10 +8,41 @@ pulls out the surrounding context, so the note is stored with the text it refers
 to rather than with a page number. Everything you have ever marked is then
 searchable across your whole library.
 
-> Status: phase 8.5 of 9. Feature complete and design-complete: add a book,
-> photograph a page, mark a passage, have a vision model transcribe it, and
-> search every annotation you have ever made. Deployment remains. Phases are
-> tracked at the bottom of this file.
+> Status: personal/friends product, deployed on free-tier infrastructure. The
+> app is intentionally shaped to show full-stack capability without requiring
+> paid services: auth, private storage, signed URLs, direct uploads, normalized
+> image geometry, model-assisted extraction, manual no-quota fallbacks, search
+> and deployment constraints.
+
+## What it demonstrates
+
+- **Full-stack product flow:** authentication, scoped data access, storage,
+  uploads, database writes, model calls, retries, search and deletion.
+- **Private media without a backend upload bottleneck:** the browser uploads
+  straight to Supabase Storage through signed URLs; the app server records only
+  verified objects.
+- **Image annotation geometry:** rectangles and page corners are normalized
+  coordinates, so resizing, zooming and device changes do not move notes.
+- **Free-tier-aware AI:** Gemini is useful but never load-bearing. Region
+  extraction runs later and retryably, transcripts can be pasted manually, and
+  text annotations need no model at all.
+- **Operational visibility:** library/book dashboards show what is captured,
+  transcribed, pending or failed.
+
+## Current feature set
+
+- Add books from Open Library metadata and keep local cover copies for faster
+  grids.
+- Upload page photographs by browsing, dragging or pasting; optional corner
+  adjustment flattens pages when the local processor is available.
+- Run a browser-side capture quality check before upload.
+- Annotate both the cleaned scan and the original photograph.
+- Extract passages from image annotations with Gemini/OpenRouter, one retryable
+  request at a time.
+- Paste or edit full-page transcripts manually, or ask Gemini to read the whole
+  page.
+- Select text in transcripts to create exact, no-model annotations.
+- Search notes, passages and context across the library, grouped by book/page.
 
 ## Architecture
 
@@ -33,7 +64,7 @@ searchable across your whole library.
     |
     |  4. enrichment, on a later request
     v
-  Vision provider  ......  Gemini Flash by default, OpenRouter as fallback
+  Vision provider  ......  Gemini by default, OpenRouter as fallback
                            swapped by env var behind one interface
 ```
 
@@ -48,13 +79,14 @@ Four ideas carry most of the design:
    `ResizeObserver` anywhere in the project.
 2. **Writes never wait on the model.** Creating an annotation returns straight
    away with `enrichment_status = 'pending'`. Enrichment happens in a separate
-   request and updates the row; the client watches for the change.
+   request and updates the row; failures remain visible and retryable.
 3. **Enrichment is cached on the row.** The same region is never sent to the
    model twice — which is what makes a free tier survivable.
 4. **Every page has two views.** The photograph, with rectangles anchored to
    normalized coordinates, and a reading view of the page as real reflowing
-   text. The photograph stays canonical: a transcript is what a model believed
-   it read, and switching back to check is one click.
+   text. The photograph stays canonical: a transcript is either pasted by the
+   reader or what a model believed it read, and switching back to check is one
+   click.
 5. **The storage bucket is private.** Uploads use a signed URL issued by the
    backend and go browser → Supabase directly. Reads use short-lived signed
    URLs. Image bytes never transit the app server.
@@ -105,6 +137,8 @@ Checks:
 npm run typecheck            # tsc --noEmit, strict
 npm run lint
 npm run build
+npm run test:offsets         # transcript range/offset invariants
+npm run test:images          # signed image recovery component
 ```
 
 ### Storage
@@ -272,7 +306,11 @@ What made the difference, in order of size:
   of 284ms, three times per navigation.
 - **Batched, cached signed URLs.** One request instead of one per image, and a
   stable URL so the browser's image cache can actually hit.
+- **Image recovery at the image boundary.** Expired signed URLs renew on failed
+  image loads, with in-flight requests coalesced by storage key.
 - **`loading.tsx` at every route**, so navigation paints immediately.
+- **No double image decode on upload.** The browser-side capture check measures
+  dimensions once and the upload path reuses them.
 
 ## Free-tier gotchas
 
@@ -317,6 +355,8 @@ Notes on the things that actually bite, collected as we hit them.
   template uses the implicit flow, which puts tokens in the URL fragment where
   only the browser can see them. To reach `/auth/confirm`, set the template to
   `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`.
+- **Manual transcripts are the quota escape hatch.** If model quota is gone,
+  paste page text in Reading view and keep using exact text notes/search.
 
 ## Phases
 
@@ -333,3 +373,4 @@ Notes on the things that actually bite, collected as we hit them.
 | 8.5 | Aesthetic overhaul before anything is public | done |
 | 9 | Deploy to Vercel and verify end to end | done |
 | 10 | Python page-processor: rectify and clean page photographs | done |
+| 11 | Product polish: dashboards, search clarity, annotation review, manual transcripts | done |

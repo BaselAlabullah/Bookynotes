@@ -13,6 +13,10 @@ export const metadata: Metadata = {
   metadataBase: new URL(publicEnv.NEXT_PUBLIC_APP_URL),
   title: "Bookynotes",
   description: "Annotate photographs of physical book pages and search them.",
+  icons: {
+    icon: "/brand/bookynotes-logo.png",
+    apple: "/brand/bookynotes-logo.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

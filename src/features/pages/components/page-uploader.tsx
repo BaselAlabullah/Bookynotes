@@ -165,6 +165,14 @@ async function inspectCapture(file: File): Promise<Extract<CaptureCheck, { statu
   };
 }
 
+async function readImageDimensions(file: File) {
+  const bitmap = await createImageBitmap(file);
+  const dimensions = { width: bitmap.width, height: bitmap.height };
+  bitmap.close();
+
+  return dimensions;
+}
+
 /**
  * Uploads a page image in three steps, and the middle one does not involve this
  * app at all:
@@ -277,14 +285,15 @@ export function PageUploader({
     }
 
     try {
-      // The intrinsic size of the image, read from the file itself. Every
-      // annotation rectangle on this page is stored as a fraction of these two
-      // numbers, which is why they are captured now rather than measured from
-      // whatever the screen happens to be showing later.
+      // The intrinsic size of the image, read from the file itself. The
+      // capture check usually did this already, so reuse it rather than decode
+      // the same multi-megabyte photograph twice.
       setState({ status: "working", step: "Reading image…" });
-      const bitmap = await createImageBitmap(file);
-      const { width, height } = bitmap;
-      bitmap.close();
+      const dimensions =
+        captureCheck.status === "ready"
+          ? { width: captureCheck.width, height: captureCheck.height }
+          : await readImageDimensions(file);
+      const { width, height } = dimensions;
 
       setState({ status: "working", step: "Requesting an upload URL…" });
       const targetResponse = await fetch("/api/pages/upload-url", {

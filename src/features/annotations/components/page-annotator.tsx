@@ -73,6 +73,8 @@ type EnrichmentRequestResult = {
   message: string | null;
 };
 
+type CopyMode = "note" | "passage" | "all";
+
 function formatPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
@@ -114,6 +116,9 @@ export function PageAnnotator({
   const [error, setError] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [copiedAnnotationId, setCopiedAnnotationId] = useState<string | null>(
+    null,
+  );
   const [editDraft, setEditDraft] = useState<AnnotationEditDraft>({
     userComment: "",
     extractedPassage: "",
@@ -392,6 +397,24 @@ export function PageAnnotator({
     });
   }
 
+  async function copyAnnotation(annotation: Annotation, mode: CopyMode) {
+    const text = formatAnnotationForClipboard(annotation, mode);
+
+    if (!text) {
+      setError("There is nothing to copy yet.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedAnnotationId(annotation.id);
+      setError(null);
+      window.setTimeout(() => setCopiedAnnotationId(null), 1600);
+    } catch {
+      setError("The browser did not allow clipboard access.");
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="screen-only flex flex-wrap items-center gap-x-5 gap-y-3 border-y border-rule py-2.5">
@@ -524,6 +547,11 @@ export function PageAnnotator({
                               <span className={`block text-sm leading-6 ${annotation.userComment ? "text-ink" : "italic text-ink-muted"}`}>{annotation.userComment || "No note was added."}</span>
                               <AnnotationExtraction annotation={annotation} isEnriching={enriching.has(annotation.id)} />
                             </button>
+                            <AnnotationCopyActions
+                              annotation={annotation}
+                              copied={copiedAnnotationId === annotation.id}
+                              onCopy={(mode) => copyAnnotation(annotation, mode)}
+                            />
                             <AnnotationEnrichmentAction annotation={annotation} isEnriching={enriching.has(annotation.id)} onEnrich={enrich} />
                             <div className="mt-3 flex flex-wrap items-center gap-3">
                               <button type="button" onClick={() => startEdit(annotation)} className="text-xs text-ink-muted underline decoration-rule underline-offset-4 hover:text-ink">Edit note/extraction</button>
@@ -978,12 +1006,122 @@ function AnnotationExtraction({ annotation, isEnriching }: { annotation: Annotat
       </span>
     );
   }
+  return <AnnotationReviewBlocks annotation={annotation} />;
+}
+
+function AnnotationReviewBlocks({ annotation }: { annotation: Annotation }) {
+  if (!annotation.extractedPassage && !annotation.extractedContext) {
+    return null;
+  }
+
   return (
-    <span className="mt-2 flex flex-col gap-2">
-      {annotation.extractedPassage ? <span className="font-serif text-[0.95rem] leading-6 text-ink-muted">“{annotation.extractedPassage}”</span> : null}
-      {annotation.extractedContext ? <span className="text-xs leading-5 text-ink-muted">{annotation.extractedContext}</span> : null}
+    <span className="mt-3 flex flex-col gap-3">
+      {annotation.extractedPassage ? (
+        <span className="flex flex-col gap-1">
+          <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-muted">
+            Read passage
+          </span>
+          <span className="font-serif text-[0.95rem] leading-6 text-ink-muted">
+            “{annotation.extractedPassage}”
+          </span>
+        </span>
+      ) : null}
+
+      {annotation.extractedContext ? (
+        <span className="flex flex-col gap-1">
+          <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-muted">
+            Context
+          </span>
+          <span className="text-xs leading-5 text-ink-muted">
+            {annotation.extractedContext}
+          </span>
+        </span>
+      ) : null}
     </span>
   );
+}
+
+function AnnotationCopyActions({
+  annotation,
+  copied,
+  onCopy,
+}: {
+  annotation: Annotation;
+  copied: boolean;
+  onCopy: (mode: CopyMode) => void;
+}) {
+  const hasNote = annotation.userComment.trim().length > 0;
+  const hasPassage =
+    Boolean(annotation.extractedPassage?.trim()) ||
+    Boolean(annotation.extractedContext?.trim());
+
+  if (!hasNote && !hasPassage) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+      {hasNote ? (
+        <button
+          type="button"
+          onClick={() => onCopy("note")}
+          className="text-ink-muted underline decoration-rule underline-offset-4 hover:text-ink"
+        >
+          Copy note
+        </button>
+      ) : null}
+      {hasPassage ? (
+        <button
+          type="button"
+          onClick={() => onCopy("passage")}
+          className="text-ink-muted underline decoration-rule underline-offset-4 hover:text-ink"
+        >
+          Copy passage
+        </button>
+      ) : null}
+      {hasNote && hasPassage ? (
+        <button
+          type="button"
+          onClick={() => onCopy("all")}
+          className="text-ink-muted underline decoration-rule underline-offset-4 hover:text-ink"
+        >
+          Copy all
+        </button>
+      ) : null}
+      {copied ? (
+        <span role="status" className="text-accent">
+          Copied
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function formatAnnotationForClipboard(
+  annotation: Annotation,
+  mode: CopyMode,
+) {
+  const note = annotation.userComment.trim();
+  const passage = annotation.extractedPassage?.trim() ?? "";
+  const context = annotation.extractedContext?.trim() ?? "";
+
+  if (mode === "note") {
+    return note;
+  }
+
+  if (mode === "passage") {
+    return [passage ? `Passage:\n${passage}` : "", context ? `Context:\n${context}` : ""]
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
+  return [
+    note ? `Note:\n${note}` : "",
+    passage ? `Passage:\n${passage}` : "",
+    context ? `Context:\n${context}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function AnnotationEditForm({

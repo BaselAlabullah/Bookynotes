@@ -2283,3 +2283,29 @@ warnings for low resolution, landscape orientation, very narrow crops, dark or
 over-bright exposure, low contrast and large files. It does not block upload.
 The reader may knowingly keep a flawed photograph, and the server remains the
 authority for file type, size and ownership. This is a guide rail, not a gate.
+
+---
+
+## 0092 — Annotation cards support review and export
+
+An annotation is useful after extraction only if the reader can quickly verify
+what is theirs and what came from the model. The margin card now labels the
+reader's note, the read passage and the context separately, and exposes copy
+actions for note, passage or the combined record.
+
+This is deliberately a client-side clipboard action rather than a server
+export. Nothing new is stored and no model is called; it makes the existing data
+easier to inspect, paste elsewhere and correct.
+
+---
+
+## 0093 — Capture analysis is reused by upload
+
+The capture-quality panel already decodes the selected image to inspect its
+dimensions, brightness and contrast. Upload used to decode the same file again
+just to recover width and height for the page row.
+
+The uploader now reuses the inspected dimensions when they are available, and
+falls back to a single dimension read only when inspection could not complete.
+It is a small client-side optimization, but it removes duplicated work on the
+largest object the browser handles in the upload flow.

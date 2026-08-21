@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { getCurrentUser } from "@/features/auth/auth.session";
@@ -8,9 +9,25 @@ export default async function HomePage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[96rem] flex-col px-5 sm:px-8">
       <header className="flex h-20 items-center justify-between border-b border-ink">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em]">
-          Bookynotes
-        </p>
+        <Link
+          href={user ? "/library" : "/"}
+          className="flex items-center gap-3"
+          aria-label="Bookynotes"
+        >
+          <span className="relative flex size-9 shrink-0 overflow-hidden">
+            <Image
+              src="/brand/bookynotes-logo.png"
+              alt=""
+              width={1254}
+              height={1254}
+              priority
+              className="size-full scale-[1.65] object-contain"
+            />
+          </span>
+          <span className="text-xs font-semibold uppercase tracking-[0.22em]">
+            Bookynotes
+          </span>
+        </Link>
         <p className="hidden text-xs uppercase tracking-[0.14em] text-ink-muted sm:block">
           Notes for books made of paper
         </p>
