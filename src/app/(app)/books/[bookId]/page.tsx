@@ -8,7 +8,10 @@ import { PageGrid } from "@/features/pages/components/page-grid";
 import { PageUploader } from "@/features/pages/components/page-uploader";
 import { listPagesForBook } from "@/features/pages/pages.repository";
 import { signPageImages } from "@/features/pages/pages.images";
-import { getPageDeletionImpacts } from "@/features/pages/pages.service";
+import {
+  getPageDashboardStats,
+  type PageDashboardStats,
+} from "@/features/pages/pages.service";
 
 /**
  * One book: its pages, and the uploader for adding another.
@@ -44,13 +47,14 @@ export default async function BookPage({
   // One request for every thumbnail on the page, and thumbnails rather than
   // the originals. See features/pages/pages.images.ts for the measurements
   // that made both of those necessary.
-  const [{ thumbnails: previewUrls }, annotationCounts] = await Promise.all([
+  const [{ thumbnails: previewUrls }, pageStats] = await Promise.all([
     signPageImages(pages),
-    getPageDeletionImpacts(
+    getPageDashboardStats(
       user.id,
       pages.map((page) => page.id),
     ),
   ]);
+  const dashboard = summarizeBookPage(pages, pageStats);
   const nextPageNumber =
     pages.length === 0
       ? 1
@@ -70,13 +74,76 @@ export default async function BookPage({
         </p>
       ) : null}
 
+      <dl className="grid gap-3 border-y border-rule py-4 sm:grid-cols-2 lg:grid-cols-5">
+        <BookMetric label="Pages" value={pages.length} />
+        <BookMetric label="Notes" value={dashboard.annotationCount} />
+        <BookMetric
+          label="Transcripts"
+          value={`${dashboard.completeTranscriptCount}/${pages.length}`}
+        />
+        <BookMetric label="Pending passages" value={dashboard.pendingPassageCount} />
+        <BookMetric label="Failed passages" value={dashboard.failedPassageCount} tone={dashboard.failedPassageCount > 0 ? "danger" : "muted"} />
+      </dl>
+
       <PageUploader
         key={nextPageNumber}
         bookId={book.id}
         nextPageNumber={nextPageNumber}
       />
 
-      <PageGrid bookId={book.id} pages={pages} previewUrls={previewUrls} annotationCounts={annotationCounts} />
+      <PageGrid bookId={book.id} pages={pages} previewUrls={previewUrls} pageStats={pageStats} />
     </main>
+  );
+}
+
+function summarizeBookPage(
+  pages: Awaited<ReturnType<typeof listPagesForBook>>,
+  pageStats: Map<string, PageDashboardStats>,
+) {
+  return pages.reduce(
+    (summary, page) => {
+      const stats = pageStats.get(page.id);
+
+      summary.annotationCount += stats?.annotationCount ?? 0;
+      summary.pendingPassageCount += stats?.pendingPassageCount ?? 0;
+      summary.failedPassageCount += stats?.failedPassageCount ?? 0;
+      summary.completeTranscriptCount +=
+        page.transcriptStatus === "complete" ? 1 : 0;
+
+      return summary;
+    },
+    {
+      annotationCount: 0,
+      pendingPassageCount: 0,
+      failedPassageCount: 0,
+      completeTranscriptCount: 0,
+    },
+  );
+}
+
+function BookMetric({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: number | string;
+  tone?: "default" | "muted" | "danger";
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <dt className="text-[11px] uppercase tracking-[0.12em] text-ink-muted">{label}</dt>
+      <dd
+        className={`font-serif text-2xl tabular-nums ${
+          tone === "danger"
+            ? "text-danger"
+            : tone === "muted"
+              ? "text-ink-muted"
+              : "text-ink"
+        }`}
+      >
+        {value}
+      </dd>
+    </div>
   );
 }

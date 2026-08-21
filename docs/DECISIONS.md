@@ -2224,3 +2224,17 @@ Sequential is intentional. It is slower in the happy path, but it avoids turning
 one page view into a burst of vision requests, which is exactly the shape that
 free-tier limits punish. If the queue hits a retryable wall, it stops with the
 message visible and can be run again later.
+
+---
+
+## 0088 — Library dashboards show operational state
+
+The library and book pages now show the work left inside the collection: page
+count, note count, transcript coverage, pending passage extraction and failed
+passage extraction. The counts are computed on the server from the same scoped
+repositories as the rest of the app, not fetched by client-side widgets.
+
+This is a product-quality feature rather than a storage feature. It makes the
+app easier to demo because a reviewer can see that the system has lifecycle
+states, not just static cards: pages are captured, transcripts are generated,
+passages are extracted, and failures remain visible until handled.

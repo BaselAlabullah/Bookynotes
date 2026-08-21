@@ -254,3 +254,58 @@ export async function countAnnotationsForPages(
 
   return new Map(rows.map((row) => [row.pageId, row.count]));
 }
+
+export type AnnotationStatusCounts = {
+  annotationCount: number;
+  pendingPassageCount: number;
+  failedPassageCount: number;
+  completePassageCount: number;
+};
+
+export async function countAnnotationStatusesForPages(
+  userId: UserId,
+  pageIds: PageId[],
+): Promise<Map<PageId, AnnotationStatusCounts>> {
+  if (pageIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      pageId: annotations.pageId,
+      annotationCount: sql<number>`count(*)::int`,
+      pendingPassageCount: sql<number>`(
+        count(*) filter (
+          where ${annotations.anchor} = 'region'
+          and ${annotations.enrichmentStatus} = 'pending'
+        )
+      )::int`,
+      failedPassageCount: sql<number>`(
+        count(*) filter (
+          where ${annotations.anchor} = 'region'
+          and ${annotations.enrichmentStatus} = 'failed'
+        )
+      )::int`,
+      completePassageCount: sql<number>`(
+        count(*) filter (
+          where ${annotations.anchor} = 'region'
+          and ${annotations.enrichmentStatus} = 'complete'
+        )
+      )::int`,
+    })
+    .from(annotations)
+    .where(
+      and(eq(annotations.userId, userId), inArray(annotations.pageId, pageIds)),
+    )
+    .groupBy(annotations.pageId);
+
+  return new Map(
+    rows.map((row) => [
+      row.pageId,
+      {
+        annotationCount: row.annotationCount,
+        pendingPassageCount: row.pendingPassageCount,
+        failedPassageCount: row.failedPassageCount,
+        completePassageCount: row.completePassageCount,
+      },
+    ]),
+  );
+}

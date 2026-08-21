@@ -4,7 +4,7 @@ import type { BookId } from "@/db/ids";
 
 import type { Book } from "../books.types";
 import { BookCover } from "./book-cover";
-import type { BookDeletionImpact } from "../books.service";
+import type { BookDashboardStats } from "../books.service";
 import { DeleteBookButton } from "./delete-book-button";
 
 /**
@@ -15,12 +15,12 @@ import { DeleteBookButton } from "./delete-book-button";
 export function LibraryList({
   books,
   coverUrls,
-  deletionImpacts,
+  dashboardStats,
 }: {
   books: Book[];
   /** Signed URLs for our own stored covers, keyed by book id. */
   coverUrls: Map<BookId, string>;
-  deletionImpacts: Map<BookId, BookDeletionImpact>;
+  dashboardStats: Map<BookId, BookDashboardStats>;
 }) {
   if (books.length === 0) {
     return (
@@ -39,46 +39,119 @@ export function LibraryList({
 
   return (
     <ul className="grid gap-x-8 gap-y-0 sm:grid-cols-2 lg:grid-cols-3">
-      {books.map((book, index) => (
-        <li
-          key={book.id}
-          className="border-b border-rule"
-        >
-          <Link href={`/books/${book.id}`} className="group flex items-start gap-4 py-6">
-            <BookCover
-              // Our copy first; Open Library's URL only for books added before
-              // covers were stored locally.
-              url={coverUrls.get(book.id) ?? book.coverUrl}
-              storageKey={book.coverStorageKey}
-              title={book.title}
-              eager={index < 4}
-            />
+      {books.map((book, index) => {
+        const stats = dashboardStats.get(book.id) ?? emptyStats;
+        const missingPassageCount =
+          stats.pendingPassageCount + stats.failedPassageCount;
+        const hasOpenWork =
+          stats.missingTranscriptCount > 0 || missingPassageCount > 0;
 
-            <div className="flex flex-col gap-1">
-              <h2 className="font-serif text-xl leading-snug group-hover:text-accent">{book.title}</h2>
-              <p className="text-sm text-ink-muted">{book.author}</p>
-              {book.series ? (
-                <p className="text-xs text-ink-muted">
-                  {book.series}
-                  {book.seriesIndex === null ? "" : ` #${book.seriesIndex}`}
-                </p>
-              ) : null}
+        return (
+          <li
+            key={book.id}
+            className="border-b border-rule"
+          >
+            <Link href={`/books/${book.id}`} className="group flex items-start gap-4 py-6">
+              <BookCover
+                // Our copy first; Open Library's URL only for books added before
+                // covers were stored locally.
+                url={coverUrls.get(book.id) ?? book.coverUrl}
+                storageKey={book.coverStorageKey}
+                title={book.title}
+                eager={index < 4}
+              />
+
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <div>
+                  <h2 className="font-serif text-xl leading-snug group-hover:text-accent">{book.title}</h2>
+                  <p className="text-sm text-ink-muted">{book.author}</p>
+                  {book.series ? (
+                    <p className="text-xs text-ink-muted">
+                      {book.series}
+                      {book.seriesIndex === null ? "" : ` #${book.seriesIndex}`}
+                    </p>
+                  ) : null}
+                </div>
+
+                <dl className="grid grid-cols-3 gap-2 text-[11px] uppercase tracking-[0.09em] text-ink-muted">
+                  <LibraryStat label="Pages" value={stats.pageCount} />
+                  <LibraryStat label="Notes" value={stats.annotationCount} />
+                  <LibraryStat
+                    label="Read"
+                    value={`${stats.completeTranscriptCount}/${stats.pageCount}`}
+                  />
+                </dl>
+
+                {hasOpenWork ? (
+                  <p className="text-xs text-accent">
+                    {formatOpenWork(stats)}
+                  </p>
+                ) : stats.pageCount > 0 ? (
+                  <p className="text-xs text-ink-muted">All captured pages are processed.</p>
+                ) : (
+                  <p className="text-xs text-ink-muted">No pages captured yet.</p>
+                )}
+              </div>
+            </Link>
+            <div className="pb-4 pl-[108px]">
+              <DeleteBookButton
+                bookId={book.id}
+                title={book.title}
+                impact={stats}
+              />
             </div>
-          </Link>
-          <div className="pb-4 pl-[108px]">
-            <DeleteBookButton
-              bookId={book.id}
-              title={book.title}
-              impact={
-                deletionImpacts.get(book.id) ?? {
-                  pageCount: 0,
-                  annotationCount: 0,
-                }
-              }
-            />
-          </div>
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ul>
   );
+}
+
+const emptyStats: BookDashboardStats = {
+  pageCount: 0,
+  annotationCount: 0,
+  completeTranscriptCount: 0,
+  missingTranscriptCount: 0,
+  pendingPassageCount: 0,
+  failedPassageCount: 0,
+  flattenedPageCount: 0,
+};
+
+function LibraryStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd className="mt-0.5 text-sm tracking-normal text-ink">{value}</dd>
+    </div>
+  );
+}
+
+function formatOpenWork(stats: BookDashboardStats) {
+  const items: string[] = [];
+  const missingPassageCount =
+    stats.pendingPassageCount + stats.failedPassageCount;
+
+  if (stats.missingTranscriptCount > 0) {
+    items.push(
+      `${stats.missingTranscriptCount} ${
+        stats.missingTranscriptCount === 1 ? "transcript" : "transcripts"
+      } missing`,
+    );
+  }
+
+  if (missingPassageCount > 0) {
+    items.push(
+      `${missingPassageCount} ${
+        missingPassageCount === 1 ? "passage" : "passages"
+      } pending`,
+    );
+  }
+
+  return items.join(" · ");
 }

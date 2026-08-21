@@ -1,6 +1,10 @@
 import { isUniqueViolation } from "@/db/errors";
 import type { PageId, UserId } from "@/db/ids";
-import { countAnnotationsForPages } from "@/features/annotations/annotations.repository";
+import {
+  countAnnotationStatusesForPages,
+  countAnnotationsForPages,
+  type AnnotationStatusCounts,
+} from "@/features/annotations/annotations.repository";
 import { findBook } from "@/features/books/books.repository";
 import {
   isPageProcessorConfigured,
@@ -264,6 +268,15 @@ export async function getPageDeletionImpacts(
   pageIds: PageId[],
 ): Promise<Map<PageId, number>> {
   return countAnnotationsForPages(userId, pageIds);
+}
+
+export type PageDashboardStats = AnnotationStatusCounts;
+
+export async function getPageDashboardStats(
+  userId: UserId,
+  pageIds: PageId[],
+): Promise<Map<PageId, PageDashboardStats>> {
+  return countAnnotationStatusesForPages(userId, pageIds);
 }
 
 export type DeletePageResult =

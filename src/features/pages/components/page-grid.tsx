@@ -1,9 +1,11 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { ResilientImage } from "@/components/ui/resilient-image";
 import type { BookId } from "@/db/ids";
 
 import type { Page } from "../pages.types";
+import type { PageDashboardStats } from "../pages.service";
 import { DeletePageButton } from "./delete-page-button";
 
 type PageGridProps = {
@@ -11,7 +13,7 @@ type PageGridProps = {
   pages: Page[];
   /** Signed read URL per page id. Signed by the server, expires in minutes. */
   previewUrls: Map<string, string>;
-  annotationCounts: Map<Page["id"], number>;
+  pageStats: Map<Page["id"], PageDashboardStats>;
 };
 
 /**
@@ -21,7 +23,7 @@ type PageGridProps = {
  * component generated for this render. They stop working after a few minutes,
  * which is fine: the next render signs new ones.
  */
-export function PageGrid({ bookId, pages, previewUrls, annotationCounts }: PageGridProps) {
+export function PageGrid({ bookId, pages, previewUrls, pageStats }: PageGridProps) {
   if (pages.length === 0) {
     return (
       <p className="border-y border-rule py-8 text-sm text-ink-muted">No pages yet. Add a photograph above; it will become the page you can mark and annotate.</p>
@@ -32,6 +34,10 @@ export function PageGrid({ bookId, pages, previewUrls, annotationCounts }: PageG
     <ul className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-4 lg:grid-cols-6">
       {pages.map((page, index) => {
         const previewUrl = previewUrls.get(page.id);
+        const stats = pageStats.get(page.id) ?? emptyPageStats;
+        const missingPassageCount =
+          stats.pendingPassageCount + stats.failedPassageCount;
+        const needsTranscript = page.transcriptStatus !== "complete";
 
         return (
           <li key={page.id}>
@@ -62,17 +68,61 @@ export function PageGrid({ bookId, pages, previewUrls, annotationCounts }: PageG
               <span className="font-serif text-sm tabular-nums text-ink-muted group-hover:text-accent">
                 Page {page.pageNumber}
               </span>
+              <span className="flex flex-wrap gap-1.5 text-[11px] text-ink-muted">
+                <PageBadge>{stats.annotationCount} {stats.annotationCount === 1 ? "note" : "notes"}</PageBadge>
+                {needsTranscript ? (
+                  <PageBadge tone="warning">No transcript</PageBadge>
+                ) : (
+                  <PageBadge>Transcript</PageBadge>
+                )}
+                {missingPassageCount > 0 ? (
+                  <PageBadge tone={stats.failedPassageCount > 0 ? "danger" : "warning"}>
+                    {missingPassageCount} passage{missingPassageCount === 1 ? "" : "s"} pending
+                  </PageBadge>
+                ) : stats.annotationCount > 0 ? (
+                  <PageBadge>Passages ready</PageBadge>
+                ) : null}
+              </span>
             </Link>
             <div className="mt-1">
               <DeletePageButton
                 pageId={page.id}
                 pageNumber={page.pageNumber}
-                annotationCount={annotationCounts.get(page.id) ?? 0}
+                annotationCount={stats.annotationCount}
               />
             </div>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+const emptyPageStats: PageDashboardStats = {
+  annotationCount: 0,
+  pendingPassageCount: 0,
+  failedPassageCount: 0,
+  completePassageCount: 0,
+};
+
+function PageBadge({
+  children,
+  tone = "neutral",
+}: {
+  children: ReactNode;
+  tone?: "neutral" | "warning" | "danger";
+}) {
+  return (
+    <span
+      className={`border px-1.5 py-0.5 ${
+        tone === "danger"
+          ? "border-danger/40 text-danger"
+          : tone === "warning"
+            ? "border-accent/35 text-accent"
+            : "border-rule"
+      }`}
+    >
+      {children}
+    </span>
   );
 }

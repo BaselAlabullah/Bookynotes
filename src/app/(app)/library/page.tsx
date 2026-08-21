@@ -5,7 +5,7 @@ import { requireUser } from "@/features/auth/auth.session";
 import { signBookCovers } from "@/features/books/books.cover";
 import { listBooks } from "@/features/books/books.repository";
 import { LibraryList } from "@/features/books/components/library-list";
-import { getBookDeletionImpacts } from "@/features/books/books.service";
+import { getBookDashboardStats } from "@/features/books/books.service";
 
 export const metadata: Metadata = { title: "Library · Bookynotes" };
 
@@ -25,9 +25,9 @@ export default async function LibraryPage({
   const { cleanup } = await searchParams;
   // One batched, cached signing request for every cover we hold our own copy
   // of. Books added before that existed fall back to Open Library's URL.
-  const [coverUrls, deletionImpacts] = await Promise.all([
+  const [coverUrls, dashboardStats] = await Promise.all([
     signBookCovers(books),
-    getBookDeletionImpacts(
+    getBookDashboardStats(
       user.id,
       books.map((book) => book.id),
     ),
@@ -53,7 +53,7 @@ export default async function LibraryPage({
         </p>
       ) : null}
 
-      <LibraryList books={books} coverUrls={coverUrls} deletionImpacts={deletionImpacts} />
+      <LibraryList books={books} coverUrls={coverUrls} dashboardStats={dashboardStats} />
     </main>
   );
 }
