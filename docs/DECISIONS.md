@@ -2253,3 +2253,18 @@ context has its own snippet. Text annotations are marked as "no model" to make
 the free path visible beside image annotations that depend on Gemini. Loose
 punctuation-insensitive matches also get client-rendered term highlighting when
 Postgres cannot produce a `ts_headline` match.
+
+---
+
+## 0090 — Manual transcripts are a first-class reading path
+
+Gemini can read a page, but it is not the only way a page becomes searchable.
+If the reader already has text from an ebook, another OCR tool or manual typing,
+the app should accept that text without spending scarce vision quota.
+
+Reading view now presents two explicit paths when a page has no transcript:
+"Use Gemini" and "Paste manually." A pasted transcript is saved through the
+same endpoint as transcript edits, appears immediately after saving, and unlocks
+text annotations with no model call. Existing saved transcripts also avoid
+claiming they were read by Gemini, because once manual editing exists the app no
+longer knows or needs to know the source.
