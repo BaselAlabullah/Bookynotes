@@ -2206,3 +2206,21 @@ action so the visual order matches the task order.
 
 This keeps the common empty state concise without hiding the existing corner
 correction workflow when it becomes relevant.
+
+---
+
+## 0087 — Missing passage extraction runs as a visible queue
+
+Region annotations can be created faster than Gemini can read them, and on the
+free tier they can also fail for reasons that are not the annotation's fault:
+daily quota, per-minute rate limits, or a temporary storage read failure.
+
+The page now exposes that state directly. Notes say whether they are pending,
+being read, failed, or complete, including the last error and retry count when
+there is one. A page-level "extract missing passages" action walks incomplete
+region notes sequentially rather than firing them in parallel.
+
+Sequential is intentional. It is slower in the happy path, but it avoids turning
+one page view into a burst of vision requests, which is exactly the shape that
+free-tier limits punish. If the queue hits a retryable wall, it stops with the
+message visible and can be run again later.

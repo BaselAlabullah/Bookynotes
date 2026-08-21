@@ -61,6 +61,18 @@ type AnnotationEditDraft = {
   extractedContext: string;
 };
 
+type BatchExtractionState = {
+  status: "running" | "done" | "stopped";
+  current: number;
+  total: number;
+  message: string;
+} | null;
+
+type EnrichmentRequestResult = {
+  ok: boolean;
+  message: string | null;
+};
+
 function formatPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
@@ -107,6 +119,8 @@ export function PageAnnotator({
     extractedPassage: "",
     extractedContext: "",
   });
+  const [batchExtraction, setBatchExtraction] =
+    useState<BatchExtractionState>(null);
   const [isSaving, startSaving] = useTransition();
   const [isUpdating, startUpdating] = useTransition();
   const [enriching, setEnriching] = useState<ReadonlySet<string>>(new Set());
@@ -127,6 +141,17 @@ export function PageAnnotator({
         .sort((a, b) => a.rectY - b.rectY || a.rectX - b.rectX),
     [annotations],
   );
+  const incompleteRegionAnnotations = orderedAnnotations.filter(
+    (annotation) => annotation.enrichmentStatus !== "complete",
+  );
+  const failedRegionAnnotations = orderedAnnotations.filter(
+    (annotation) => annotation.enrichmentStatus === "failed",
+  );
+  const isBatchExtracting = batchExtraction?.status === "running";
+  const isExtractionButtonDisabled =
+    batchExtraction?.status === "running" ||
+    batchExtraction?.status === "done" ||
+    enriching.size > 0;
 
   useEffect(() => {
     if (!selectedId) return;
@@ -182,22 +207,37 @@ export function PageAnnotator({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [nextHref, orderedAnnotations, previousHref, router, selectedId]);
 
+  async function requestEnrichment(
+    annotationId: string,
+    force = false,
+  ): Promise<EnrichmentRequestResult> {
+    const response = await fetch(
+      `/api/annotations/${annotationId}/enrich${force ? "?force=true" : ""}`,
+      { method: "POST" },
+    );
+    const body = enrichResponseSchema.safeParse(await response.json());
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        message:
+          body.success && body.data.error
+            ? body.data.error
+            : "The passage could not be extracted.",
+      };
+    }
+
+    return { ok: true, message: null };
+  }
+
   async function enrich(annotationId: string, force = false) {
     setEnriching((current) => new Set(current).add(annotationId));
 
     try {
-      const response = await fetch(
-        `/api/annotations/${annotationId}/enrich${force ? "?force=true" : ""}`,
-        { method: "POST" },
-      );
-      const body = enrichResponseSchema.safeParse(await response.json());
+      const result = await requestEnrichment(annotationId, force);
 
-      if (!response.ok) {
-        setError(
-          body.success && body.data.error
-            ? body.data.error
-            : "The passage could not be extracted.",
-        );
+      if (!result.ok) {
+        setError(result.message);
       } else {
         setError(null);
       }
@@ -211,6 +251,78 @@ export function PageAnnotator({
       });
       router.refresh();
     }
+  }
+
+  async function extractMissingPassages() {
+    const queue = incompleteRegionAnnotations;
+
+    if (queue.length === 0) {
+      return;
+    }
+
+    setError(null);
+    setBatchExtraction({
+      status: "running",
+      current: 0,
+      total: queue.length,
+      message: "Starting extraction queue...",
+    });
+
+    for (const [index, annotation] of queue.entries()) {
+      const force = annotation.enrichmentStatus === "failed";
+
+      setBatchExtraction({
+        status: "running",
+        current: index + 1,
+        total: queue.length,
+        message: force
+          ? `Retrying note ${index + 1} of ${queue.length}...`
+          : `Reading note ${index + 1} of ${queue.length}...`,
+      });
+      setEnriching((current) => new Set(current).add(annotation.id));
+
+      try {
+        const result = await requestEnrichment(annotation.id, force);
+
+        if (!result.ok) {
+          setError(result.message);
+          setBatchExtraction({
+            status: "stopped",
+            current: index + 1,
+            total: queue.length,
+            message:
+              result.message ??
+              "Extraction stopped. You can run the queue again later.",
+          });
+          router.refresh();
+          return;
+        }
+      } catch {
+        setError("Could not reach the extraction service.");
+        setBatchExtraction({
+          status: "stopped",
+          current: index + 1,
+          total: queue.length,
+          message: "Extraction stopped because the service could not be reached.",
+        });
+        router.refresh();
+        return;
+      } finally {
+        setEnriching((current) => {
+          const next = new Set(current);
+          next.delete(annotation.id);
+          return next;
+        });
+      }
+    }
+
+    setBatchExtraction({
+      status: "done",
+      current: queue.length,
+      total: queue.length,
+      message: "All missing passages were extracted.",
+    });
+    router.refresh();
   }
 
   function save() {
@@ -298,12 +410,31 @@ export function PageAnnotator({
             ? "Original photograph. Scan view is required to place notes on this older page."
             : "Drag across a passage to begin a note."}
         </p>
+        {incompleteRegionAnnotations.length > 0 ? (
+          <button
+            type="button"
+            onClick={extractMissingPassages}
+            disabled={isExtractionButtonDisabled}
+            className="text-xs uppercase tracking-[0.1em] text-accent underline decoration-accent/40 underline-offset-4 hover:text-ink disabled:text-ink-muted disabled:decoration-rule disabled:opacity-60"
+          >
+            {isBatchExtracting
+              ? `Extracting ${batchExtraction.current}/${batchExtraction.total}`
+              : failedRegionAnnotations.length > 0
+                ? `Retry missing passages (${incompleteRegionAnnotations.length})`
+                : `Extract missing passages (${incompleteRegionAnnotations.length})`}
+          </button>
+        ) : null}
         <button type="button" onClick={() => setIsMarginOpen((open) => !open)} className="text-xs uppercase tracking-[0.1em] text-ink-muted underline decoration-rule underline-offset-4 hover:text-ink" aria-expanded={isMarginOpen}>
           {isMarginOpen ? "Hide notes" : `Show notes (${annotations.length})`}
         </button>
       </div>
 
       {error ? <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">{error}</p> : null}
+      {batchExtraction ? (
+        <p role="status" className="border-l-2 border-accent pl-3 text-sm text-ink-muted">
+          {batchExtraction.message}
+        </p>
+      ) : null}
 
       <div className={`annotation-layout grid items-start gap-6 ${isMarginOpen ? "lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]" : "grid-cols-1"}`}>
         <div className="annotation-canvas-region min-w-0">
@@ -825,10 +956,27 @@ function clamp01(value: number) {
 function AnnotationExtraction({ annotation, isEnriching }: { annotation: Annotation; isEnriching: boolean }) {
   if (isEnriching) return <span role="status" className="mt-2 block text-xs italic text-ink-muted">Reading the passage…</span>;
   if (annotation.enrichmentStatus === "pending") {
-    return <span className="mt-2 block text-xs italic text-ink-muted">Passage not extracted yet{annotation.enrichmentError ? ` — ${annotation.enrichmentError}` : ""}</span>;
+    const attempts =
+      annotation.retryCount > 0
+        ? ` Attempt ${annotation.retryCount + 1} will run next.`
+        : "";
+
+    return (
+      <span className="mt-2 block text-xs italic text-ink-muted">
+        Passage not extracted yet.
+        {annotation.enrichmentError ? ` Last issue: ${annotation.enrichmentError}` : ""}
+        {attempts}
+      </span>
+    );
   }
   if (annotation.enrichmentStatus === "failed") {
-    return <span className="mt-2 block text-xs italic text-danger">{annotation.enrichmentError ?? "Extraction failed."}</span>;
+    return (
+      <span className="mt-2 block text-xs italic text-danger">
+        Extraction failed after {annotation.retryCount}{" "}
+        {annotation.retryCount === 1 ? "attempt" : "attempts"}.
+        {annotation.enrichmentError ? ` ${annotation.enrichmentError}` : ""}
+      </span>
+    );
   }
   return (
     <span className="mt-2 flex flex-col gap-2">
