@@ -2268,3 +2268,18 @@ same endpoint as transcript edits, appears immediately after saving, and unlocks
 text annotations with no model call. Existing saved transcripts also avoid
 claiming they were read by Gemini, because once manual editing exists the app no
 longer knows or needs to know the source.
+
+---
+
+## 0091 — Capture quality is checked before upload
+
+Bad photographs are expensive later: they make corner placement harder, reduce
+transcription quality, and spend scarce model quota on inputs that were visibly
+weak before upload. The cheapest place to catch that is the browser, while the
+file is already selected and before any storage or Gemini request happens.
+
+The uploader now samples the selected image client-side and reports advisory
+warnings for low resolution, landscape orientation, very narrow crops, dark or
+over-bright exposure, low contrast and large files. It does not block upload.
+The reader may knowingly keep a flawed photograph, and the server remains the
+authority for file type, size and ownership. This is a guide rail, not a gate.

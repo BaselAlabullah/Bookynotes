@@ -21,6 +21,19 @@ type UploadState =
   | { status: "working"; step: string; progress?: number }
   | { status: "error"; message: string };
 
+type CaptureCheck =
+  | { status: "idle" }
+  | { status: "checking" }
+  | {
+      status: "ready";
+      width: number;
+      height: number;
+      megapixels: number;
+      warnings: string[];
+      tips: string[];
+    }
+  | { status: "unavailable"; message: string };
+
 async function readErrorMessage(response: Response, fallback: string) {
   const body: unknown = await response.json().catch(() => null);
   const parsed = apiErrorSchema.safeParse(body);
@@ -68,6 +81,90 @@ function uploadFileToSignedUrl({
   });
 }
 
+async function inspectCapture(file: File): Promise<Extract<CaptureCheck, { status: "ready" }>> {
+  const bitmap = await createImageBitmap(file);
+  const width = bitmap.width;
+  const height = bitmap.height;
+  const sampleSize = 96;
+  const canvas = document.createElement("canvas");
+  canvas.width = sampleSize;
+  canvas.height = sampleSize;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+
+  if (!context) {
+    bitmap.close();
+    throw new Error("Could not inspect this image.");
+  }
+
+  context.drawImage(bitmap, 0, 0, sampleSize, sampleSize);
+  bitmap.close();
+
+  const pixels = context.getImageData(0, 0, sampleSize, sampleSize).data;
+  let brightnessTotal = 0;
+  const luminance: number[] = [];
+
+  for (let index = 0; index < pixels.length; index += 4) {
+    const gray =
+      0.2126 * (pixels[index] ?? 0) +
+      0.7152 * (pixels[index + 1] ?? 0) +
+      0.0722 * (pixels[index + 2] ?? 0);
+    brightnessTotal += gray;
+    luminance.push(gray);
+  }
+
+  const brightness = brightnessTotal / luminance.length;
+  const contrast = Math.sqrt(
+    luminance.reduce((total, value) => total + (value - brightness) ** 2, 0) /
+      luminance.length,
+  );
+  const shortSide = Math.min(width, height);
+  const longSide = Math.max(width, height);
+  const megapixels = (width * height) / 1_000_000;
+  const warnings: string[] = [];
+  const tips: string[] = [];
+
+  if (shortSide < 900 || megapixels < 1) {
+    warnings.push("Low resolution");
+    tips.push("Move the camera closer or use the original camera file.");
+  }
+
+  if (width > height) {
+    warnings.push("Landscape photo");
+    tips.push("Portrait pages usually read better when captured upright.");
+  }
+
+  if (longSide / shortSide > 2.2) {
+    warnings.push("Very narrow crop");
+    tips.push("Make sure the whole page is visible, not just a strip of text.");
+  }
+
+  if (brightness < 55) {
+    warnings.push("Dark image");
+    tips.push("Add light or move away from shadows before uploading.");
+  } else if (brightness > 220) {
+    warnings.push("Very bright image");
+    tips.push("Avoid glare; text can disappear in overexposed areas.");
+  }
+
+  if (contrast < 28) {
+    warnings.push("Low contrast");
+    tips.push("Try a darker background or stronger, even lighting.");
+  }
+
+  if (file.size > 8 * 1024 * 1024) {
+    tips.push("This file is large; upload may be slower on Vercel/Supabase.");
+  }
+
+  return {
+    status: "ready",
+    width,
+    height,
+    megapixels,
+    warnings: Array.from(new Set(warnings)),
+    tips: Array.from(new Set(tips)),
+  };
+}
+
 /**
  * Uploads a page image in three steps, and the middle one does not involve this
  * app at all:
@@ -88,6 +185,7 @@ export function PageUploader({
 }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const captureCheckIdRef = useRef(0);
   const [state, setState] = useState<UploadState>({ status: "idle" });
   const [pageNumberValue, setPageNumberValue] = useState(
     String(nextPageNumber),
@@ -100,6 +198,9 @@ export function PageUploader({
    * event and not something to be synchronised.
    */
   const [chosen, setChosen] = useState<{ file: File; url: string } | null>(null);
+  const [captureCheck, setCaptureCheck] = useState<CaptureCheck>({
+    status: "idle",
+  });
   const [corners, setCorners] = useState<Corners>(DEFAULT_CORNERS);
   const [straighten, setStraighten] = useState(true);
 
@@ -110,6 +211,9 @@ export function PageUploader({
   }, [chosen]);
 
   function chooseFile(file: File | null) {
+    const checkId = captureCheckIdRef.current + 1;
+    captureCheckIdRef.current = checkId;
+
     if (!file && fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -120,7 +224,25 @@ export function PageUploader({
     });
     // A new photograph means the old corners mean nothing.
     setCorners(DEFAULT_CORNERS);
+    setCaptureCheck(file ? { status: "checking" } : { status: "idle" });
     setState({ status: "idle" });
+
+    if (file) {
+      void inspectCapture(file)
+        .then((result) => {
+          if (captureCheckIdRef.current === checkId) {
+            setCaptureCheck(result);
+          }
+        })
+        .catch(() => {
+          if (captureCheckIdRef.current === checkId) {
+            setCaptureCheck({
+              status: "unavailable",
+              message: "Capture quality could not be checked for this file.",
+            });
+          }
+        });
+    }
   }
 
   async function upload(formData: FormData) {
@@ -383,6 +505,8 @@ export function PageUploader({
 
       {chosen ? (
         <div className="border-t border-rule px-6 py-6 sm:px-7">
+          <CaptureQualityPanel check={captureCheck} />
+
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.12em] text-ink-muted">
@@ -464,5 +588,72 @@ export function PageUploader({
         </button>
       </div>
     </form>
+  );
+}
+
+function CaptureQualityPanel({ check }: { check: CaptureCheck }) {
+  if (check.status === "idle") {
+    return null;
+  }
+
+  return (
+    <section className="mb-5 border border-rule bg-paper px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.12em] text-ink-muted">
+            Capture check
+          </p>
+          {check.status === "checking" ? (
+            <p className="mt-1 text-sm text-ink-muted">Checking the photograph...</p>
+          ) : check.status === "unavailable" ? (
+            <p className="mt-1 text-sm text-ink-muted">{check.message}</p>
+          ) : (
+            <p className="mt-1 text-sm text-ink-muted">
+              {check.width} × {check.height} · {check.megapixels.toFixed(1)} MP
+            </p>
+          )}
+        </div>
+
+        {check.status === "ready" ? (
+          <span
+            className={`border px-2 py-1 text-[11px] uppercase tracking-[0.1em] ${
+              check.warnings.length === 0
+                ? "border-rule text-ink-muted"
+                : "border-accent/40 text-accent"
+            }`}
+          >
+            {check.warnings.length === 0 ? "Looks usable" : "Review photo"}
+          </span>
+        ) : null}
+      </div>
+
+      {check.status === "ready" ? (
+        check.warnings.length === 0 ? (
+          <p className="mt-3 text-sm leading-6 text-ink-muted">
+            The image has enough resolution and contrast for annotation and
+            model reading. Nice, tidy little page goblin approved.
+          </p>
+        ) : (
+          <div className="mt-3 flex flex-col gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {check.warnings.map((warning) => (
+                <span
+                  key={warning}
+                  className="border border-accent/40 px-2 py-1 text-[11px] uppercase tracking-[0.08em] text-accent"
+                >
+                  {warning}
+                </span>
+              ))}
+            </div>
+
+            <ul className="list-disc space-y-1 pl-4 text-sm leading-6 text-ink-muted">
+              {check.tips.map((tip) => (
+                <li key={tip}>{tip}</li>
+              ))}
+            </ul>
+          </div>
+        )
+      ) : null}
+    </section>
   );
 }
