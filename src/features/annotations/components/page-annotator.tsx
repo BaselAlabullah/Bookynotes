@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import type { PageId } from "@/db/ids";
 
@@ -21,6 +21,8 @@ import { DeleteAnnotationButton } from "./delete-annotation-button";
 type PageAnnotatorProps = {
   pageId: PageId;
   imageUrl: string;
+  originalImageUrl: string | null;
+  originalPageCorners: PageCorners | null;
   imageStorageKey: string;
   imageWidth: number;
   imageHeight: number;
@@ -32,6 +34,26 @@ type PageAnnotatorProps = {
 
 /** 1 means the whole page is visible; larger steps widen the image wrapper. */
 const ZOOM_STEPS = [1, 1.5, 2, 3, 4] as const;
+const MIN_SELECTION_SIZE = 0.005;
+const ORIGINAL_FIT_HEIGHT_VH = 78;
+
+type Point = { x: number; y: number };
+type PageCorners = [Point, Point, Point, Point];
+type HomographyMatrix = [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
+type Projection = {
+  scanRectToOriginalRect: (rect: NormalizedRect) => NormalizedRect;
+  originalRectToScanRect: (rect: NormalizedRect) => NormalizedRect | null;
+};
 
 type AnnotationEditDraft = {
   userComment: string;
@@ -55,6 +77,8 @@ function isTypingTarget(target: EventTarget | null) {
 export function PageAnnotator({
   pageId,
   imageUrl,
+  originalImageUrl,
+  originalPageCorners,
   imageStorageKey,
   imageWidth,
   imageHeight,
@@ -65,7 +89,7 @@ export function PageAnnotator({
 }: PageAnnotatorProps) {
   const router = useRouter();
   const [zoomIndex, setZoomIndex] = useState(0);
-  const [scanView, setScanView] = useState(false);
+  const [scanView, setScanView] = useState(!originalImageUrl);
   const [draft, setDraft] = useState<NormalizedRect | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(() =>
     annotations.some((annotation) => annotation.id === initialSelectedId)
@@ -88,6 +112,11 @@ export function PageAnnotator({
   const [enriching, setEnriching] = useState<ReadonlySet<string>>(new Set());
 
   const zoom = ZOOM_STEPS[zoomIndex] ?? 1;
+  const isShowingOriginalPhoto = Boolean(originalImageUrl) && !scanView;
+  const originalProjection = useMemo(
+    () => buildOriginalProjection(originalPageCorners),
+    [originalPageCorners],
+  );
   // Only region anchors appear on the photograph, ordered down the page so the
   // margin notes read in the order the eye meets them. Text annotations belong
   // to the reading view and are listed there.
@@ -264,7 +293,11 @@ export function PageAnnotator({
           <input type="checkbox" checked={scanView} onChange={(event) => setScanView(event.target.checked)} className="accent-accent" />
           Scan view
         </label>
-        <p className="mr-auto text-sm text-ink-muted">Drag across a passage to begin a note.</p>
+        <p className="mr-auto text-sm text-ink-muted">
+          {isShowingOriginalPhoto && !originalProjection
+            ? "Original photograph. Scan view is required to place notes on this older page."
+            : "Drag across a passage to begin a note."}
+        </p>
         <button type="button" onClick={() => setIsMarginOpen((open) => !open)} className="text-xs uppercase tracking-[0.1em] text-ink-muted underline decoration-rule underline-offset-4 hover:text-ink" aria-expanded={isMarginOpen}>
           {isMarginOpen ? "Hide notes" : `Show notes (${annotations.length})`}
         </button>
@@ -274,21 +307,36 @@ export function PageAnnotator({
 
       <div className={`annotation-layout grid items-start gap-6 ${isMarginOpen ? "lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]" : "grid-cols-1"}`}>
         <div className="annotation-canvas-region min-w-0">
-          <AnnotationCanvas
-            imageUrl={imageUrl}
-            imageStorageKey={imageStorageKey}
-            imageWidth={imageWidth}
-            imageHeight={imageHeight}
-            zoom={zoom}
-            scanView={scanView}
-            annotations={orderedAnnotations}
-            draft={draft}
-            selectedId={selectedId}
-            highlightedId={highlightedId ?? selectedId}
-            onSelect={(id) => { setSelectedId(id); if (id) setIsMarginOpen(true); }}
-            onHighlight={setHighlightedId}
-            onDraftChange={(rect) => { setDraft(rect); if (rect) setIsMarginOpen(true); }}
-          />
+          {isShowingOriginalPhoto && originalImageUrl ? (
+            <OriginalPhotoAnnotationCanvas
+              imageUrl={originalImageUrl}
+              zoom={zoom}
+              projection={originalProjection}
+              annotations={orderedAnnotations}
+              draft={draft}
+              selectedId={selectedId}
+              highlightedId={highlightedId ?? selectedId}
+              onSelect={(id) => { setSelectedId(id); if (id) setIsMarginOpen(true); }}
+              onHighlight={setHighlightedId}
+              onDraftChange={(rect) => { setDraft(rect); if (rect) setIsMarginOpen(true); }}
+            />
+          ) : (
+            <AnnotationCanvas
+              imageUrl={imageUrl}
+              imageStorageKey={imageStorageKey}
+              imageWidth={imageWidth}
+              imageHeight={imageHeight}
+              zoom={zoom}
+              scanView={!originalImageUrl && scanView}
+              annotations={orderedAnnotations}
+              draft={draft}
+              selectedId={selectedId}
+              highlightedId={highlightedId ?? selectedId}
+              onSelect={(id) => { setSelectedId(id); if (id) setIsMarginOpen(true); }}
+              onHighlight={setHighlightedId}
+              onDraftChange={(rect) => { setDraft(rect); if (rect) setIsMarginOpen(true); }}
+            />
+          )}
         </div>
 
         {isMarginOpen ? (
@@ -363,6 +411,414 @@ export function PageAnnotator({
       </div>
     </div>
   );
+}
+
+function OriginalPhotoAnnotationCanvas({
+  imageUrl,
+  zoom,
+  projection,
+  annotations,
+  draft,
+  selectedId,
+  highlightedId,
+  onSelect,
+  onHighlight,
+  onDraftChange,
+}: {
+  imageUrl: string;
+  zoom: number;
+  projection: Projection | null;
+  annotations: Annotation[];
+  draft: NormalizedRect | null;
+  selectedId: string | null;
+  highlightedId: string | null;
+  onSelect: (id: string | null) => void;
+  onHighlight: (id: string | null) => void;
+  onDraftChange: (rect: NormalizedRect | null) => void;
+}) {
+  const startRef = useRef<Point | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const canDraw = Boolean(projection);
+
+  function toNormalized(event: React.PointerEvent<SVGSVGElement>) {
+    const box = event.currentTarget.getBoundingClientRect();
+
+    return {
+      x: clamp01((event.clientX - box.left) / box.width),
+      y: clamp01((event.clientY - box.top) / box.height),
+    };
+  }
+
+  function handlePointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    if (!canDraw || event.button !== 0) {
+      return;
+    }
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+    startRef.current = toNormalized(event);
+    setIsDrawing(true);
+    onSelect(null);
+    onDraftChange(null);
+  }
+
+  function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    const start = startRef.current;
+
+    if (!isDrawing || !start || !projection) {
+      return;
+    }
+
+    onDraftChange(
+      projection.originalRectToScanRect(
+        rectBetween(start, toNormalized(event)),
+      ),
+    );
+  }
+
+  function handlePointerUp(event: React.PointerEvent<SVGSVGElement>) {
+    const start = startRef.current;
+
+    if (!isDrawing || !start || !projection) {
+      return;
+    }
+
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    setIsDrawing(false);
+    startRef.current = null;
+
+    const displayRect = rectBetween(start, toNormalized(event));
+    const storedRect =
+      displayRect.width < MIN_SELECTION_SIZE &&
+      displayRect.height < MIN_SELECTION_SIZE
+        ? null
+        : projection.originalRectToScanRect(displayRect);
+
+    onDraftChange(storedRect);
+  }
+
+  const displayedDraft =
+    projection && draft ? projection.scanRectToOriginalRect(draft) : null;
+
+  return (
+    <div className="max-h-[82vh] overflow-auto bg-paper-deep/50 shadow-inner">
+      <div className="relative mx-auto w-fit">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={imageUrl}
+          alt="Original page photograph"
+          className="block max-w-none select-none"
+          draggable={false}
+          style={{ height: `${ORIGINAL_FIT_HEIGHT_VH * zoom}vh`, width: "auto" }}
+        />
+
+        <svg
+          viewBox="0 0 1 1"
+          preserveAspectRatio="none"
+          className={`absolute inset-0 h-full w-full touch-none ${
+            canDraw ? "cursor-crosshair" : "cursor-not-allowed"
+          }`}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          aria-label={
+            canDraw
+              ? "Draw an annotation on the original photograph"
+              : "Original photograph cannot be annotated because no page corners were saved"
+          }
+        >
+          {projection
+            ? annotations.filter(isRegionAnnotation).map((annotation) => {
+                const rect = projection.scanRectToOriginalRect({
+                  x: annotation.rectX,
+                  y: annotation.rectY,
+                  width: annotation.rectWidth,
+                  height: annotation.rectHeight,
+                });
+
+                return (
+                  <rect
+                    key={annotation.id}
+                    x={rect.x}
+                    y={rect.y}
+                    width={rect.width}
+                    height={rect.height}
+                    vectorEffect="non-scaling-stroke"
+                    strokeWidth={highlightedId === annotation.id ? 3 : 1.5}
+                    className={
+                      highlightedId === annotation.id
+                        ? "fill-accent/20 stroke-accent"
+                        : "fill-accent/5 stroke-accent/70 hover:fill-accent/15"
+                    }
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Select annotation ${annotations.indexOf(annotation) + 1}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onPointerEnter={() => onHighlight(annotation.id)}
+                    onPointerLeave={() => onHighlight(null)}
+                    onFocus={() => onHighlight(annotation.id)}
+                    onBlur={() => onHighlight(null)}
+                    onPointerUp={(event) => {
+                      event.stopPropagation();
+                      onSelect(annotation.id);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelect(annotation.id);
+                      }
+                    }}
+                  />
+                );
+              })
+            : null}
+
+          {displayedDraft ? (
+            <rect
+              x={displayedDraft.x}
+              y={displayedDraft.y}
+              width={displayedDraft.width}
+              height={displayedDraft.height}
+              vectorEffect="non-scaling-stroke"
+              strokeWidth={2}
+              strokeDasharray="6 4"
+              className="fill-accent/10 stroke-accent"
+            />
+          ) : null}
+        </svg>
+
+        {projection
+          ? annotations.filter(isRegionAnnotation).map((annotation, index) => {
+              const rect = projection.scanRectToOriginalRect({
+                x: annotation.rectX,
+                y: annotation.rectY,
+                width: annotation.rectWidth,
+                height: annotation.rectHeight,
+              });
+
+              return (
+                <span
+                  key={annotation.id}
+                  aria-hidden
+                  className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                    selectedId === annotation.id
+                      ? "bg-accent text-paper"
+                      : "bg-paper-raised text-accent ring-1 ring-accent"
+                  }`}
+                  style={{
+                    left: `${rect.x * 100}%`,
+                    top: `${rect.y * 100}%`,
+                  }}
+                >
+                  {index + 1}
+                </span>
+              );
+            })
+          : null}
+      </div>
+    </div>
+  );
+}
+
+function buildOriginalProjection(corners: PageCorners | null): Projection | null {
+  if (!corners) {
+    return null;
+  }
+
+  const ordered = orderPageCorners(corners);
+  const scanCorners: PageCorners = [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 1, y: 1 },
+    { x: 0, y: 1 },
+  ];
+  const scanToOriginal = findHomography(scanCorners, ordered);
+  const originalToScan = findHomography(ordered, scanCorners);
+
+  if (!scanToOriginal || !originalToScan) {
+    return null;
+  }
+
+  return {
+    scanRectToOriginalRect: (rect) =>
+      rectFromProjectedCorners(rect, (point) => projectPoint(point, scanToOriginal)),
+    originalRectToScanRect: (rect) => {
+      const projected = rectFromProjectedCorners(rect, (point) =>
+        projectPoint(point, originalToScan),
+      );
+
+      return projected.width < MIN_SELECTION_SIZE &&
+        projected.height < MIN_SELECTION_SIZE
+        ? null
+        : projected;
+    },
+  };
+}
+
+function orderPageCorners(corners: PageCorners): PageCorners {
+  const sortedByY = [...corners].sort((a, b) => a.y - b.y);
+  const [topLeft, topRight] = sortPairByX(sortedByY[0]!, sortedByY[1]!);
+  const [bottomLeft, bottomRight] = sortPairByX(sortedByY[2]!, sortedByY[3]!);
+
+  return [topLeft, topRight, bottomRight, bottomLeft];
+}
+
+function sortPairByX(a: Point, b: Point): [Point, Point] {
+  return a.x <= b.x ? [a, b] : [b, a];
+}
+
+function findHomography(from: PageCorners, to: PageCorners): HomographyMatrix | null {
+  const matrix: number[][] = [];
+
+  for (let index = 0; index < 4; index += 1) {
+    const source = from[index]!;
+    const target = to[index]!;
+
+    matrix.push([
+      source.x,
+      source.y,
+      1,
+      0,
+      0,
+      0,
+      -target.x * source.x,
+      -target.x * source.y,
+      target.x,
+    ]);
+    matrix.push([
+      0,
+      0,
+      0,
+      source.x,
+      source.y,
+      1,
+      -target.y * source.x,
+      -target.y * source.y,
+      target.y,
+    ]);
+  }
+
+  const solution = solveLinearSystem(matrix);
+
+  return solution
+    ? [
+        solution[0],
+        solution[1],
+        solution[2],
+        solution[3],
+        solution[4],
+        solution[5],
+        solution[6],
+        solution[7],
+        1,
+      ]
+    : null;
+}
+
+function solveLinearSystem(matrix: number[][]): [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+] | null {
+  const size = matrix.length;
+
+  for (let column = 0; column < size; column += 1) {
+    let pivot = column;
+
+    for (let row = column + 1; row < size; row += 1) {
+      if (
+        Math.abs(matrix[row]![column]!) > Math.abs(matrix[pivot]![column]!)
+      ) {
+        pivot = row;
+      }
+    }
+
+    if (Math.abs(matrix[pivot]![column]!) < 1e-12) {
+      return null;
+    }
+
+    [matrix[column], matrix[pivot]] = [matrix[pivot]!, matrix[column]!];
+
+    const divisor = matrix[column]![column]!;
+
+    for (let cell = column; cell <= size; cell += 1) {
+      matrix[column]![cell] = matrix[column]![cell]! / divisor;
+    }
+
+    for (let row = 0; row < size; row += 1) {
+      if (row === column) {
+        continue;
+      }
+
+      const factor = matrix[row]![column]!;
+
+      for (let cell = column; cell <= size; cell += 1) {
+        matrix[row]![cell] =
+          matrix[row]![cell]! - factor * matrix[column]![cell]!;
+      }
+    }
+  }
+
+  return [
+    matrix[0]![size]!,
+    matrix[1]![size]!,
+    matrix[2]![size]!,
+    matrix[3]![size]!,
+    matrix[4]![size]!,
+    matrix[5]![size]!,
+    matrix[6]![size]!,
+    matrix[7]![size]!,
+  ];
+}
+
+function projectPoint(point: Point, matrix: HomographyMatrix) {
+  const denominator = matrix[6] * point.x + matrix[7] * point.y + matrix[8];
+
+  return {
+    x: (matrix[0] * point.x + matrix[1] * point.y + matrix[2]) / denominator,
+    y: (matrix[3] * point.x + matrix[4] * point.y + matrix[5]) / denominator,
+  };
+}
+
+function rectFromProjectedCorners(
+  rect: NormalizedRect,
+  project: (point: Point) => Point,
+): NormalizedRect {
+  const points = [
+    project({ x: rect.x, y: rect.y }),
+    project({ x: rect.x + rect.width, y: rect.y }),
+    project({ x: rect.x + rect.width, y: rect.y + rect.height }),
+    project({ x: rect.x, y: rect.y + rect.height }),
+  ];
+  const left = clamp01(Math.min(...points.map((point) => point.x)));
+  const right = clamp01(Math.max(...points.map((point) => point.x)));
+  const top = clamp01(Math.min(...points.map((point) => point.y)));
+  const bottom = clamp01(Math.max(...points.map((point) => point.y)));
+
+  return {
+    x: left,
+    y: top,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+  };
+}
+
+function rectBetween(a: Point, b: Point): NormalizedRect {
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    width: Math.abs(a.x - b.x),
+    height: Math.abs(a.y - b.y),
+  };
+}
+
+function clamp01(value: number) {
+  return Math.min(1, Math.max(0, value));
 }
 
 /** What the model found, or an honest account of why it has not yet. */

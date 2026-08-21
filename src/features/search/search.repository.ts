@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import type { UserId } from "@/db/ids";
@@ -36,6 +36,14 @@ import {
 const buildQuery = (query: string) =>
   sql`websearch_to_tsquery('english', ${query})`;
 
+function normalizeLooseQuery(query: string) {
+  return query
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 /**
  * `ts_headline` options.
  *
@@ -52,11 +60,25 @@ export async function searchAnnotations(
   userId: UserId,
   query: string,
 ): Promise<SearchResult[]> {
+  const looseQuery = normalizeLooseQuery(query);
+
+  if (looseQuery.length === 0) {
+    return [];
+  }
+
   const tsQuery = buildQuery(query);
+  const searchableText = sql<string>`regexp_replace(
+    lower(concat_ws(' ', ${annotations.userComment}, ${annotations.extractedPassage}, ${annotations.extractedContext})),
+    '[^[:alnum:]]+',
+    ' ',
+    'g'
+  )`;
+  const looseMatch = sql`${searchableText} like ${`%${looseQuery}%`}`;
+  const hasLexemes = sql`numnode(${tsQuery}) > 0`;
 
   // Computed once and referenced twice — in the ORDER BY and in the selected
   // column — so the ranking the user sees is the ranking that sorted the rows.
-  const rank = sql<number>`ts_rank_cd(${annotations.searchVector}, ${tsQuery})`;
+  const rank = sql<number>`ts_rank_cd(${annotations.searchVector}, ${tsQuery}) + case when ${looseMatch} then 0.05 else 0 end`;
 
   return db
     .select({
@@ -67,11 +89,16 @@ export async function searchAnnotations(
       bookTitle: books.title,
       bookAuthor: books.author,
       enrichmentStatus: annotations.enrichmentStatus,
-      commentSnippet: sql<string>`ts_headline('english', ${annotations.userComment}, ${tsQuery}, ${headlineOptions})`,
+      commentSnippet: sql<string>`case when ${hasLexemes}
+        then ts_headline('english', ${annotations.userComment}, ${tsQuery}, ${headlineOptions})
+        else ${annotations.userComment}
+      end`,
       passageSnippet: sql<
         string | null
       >`case when ${annotations.extractedPassage} is null then null
-              else ts_headline('english', ${annotations.extractedPassage}, ${tsQuery}, ${headlineOptions}) end`,
+              when ${hasLexemes}
+              then ts_headline('english', ${annotations.extractedPassage}, ${tsQuery}, ${headlineOptions})
+              else ${annotations.extractedPassage} end`,
       rank,
     })
     .from(annotations)
@@ -86,7 +113,7 @@ export async function searchAnnotations(
         // The `@@` match is what the GIN index answers. Ranking happens
         // afterwards, on the handful of rows that matched, which is why the
         // index makes this fast and the ranking function does not undo it.
-        sql`${annotations.searchVector} @@ ${tsQuery}`,
+        or(sql`${annotations.searchVector} @@ ${tsQuery}`, looseMatch),
       ),
     )
     .orderBy(desc(rank), desc(annotations.createdAt))

@@ -8,9 +8,13 @@ import { PageAnnotator } from "@/features/annotations/components/page-annotator"
 
 import { PageTranscript } from "./page-transcript";
 
+type Point = { x: number; y: number };
+
 type PageSurfaceProps = {
   pageId: PageId;
   imageUrl: string;
+  originalImageUrl: string | null;
+  originalPageCorners: [Point, Point, Point, Point] | null;
   imageStorageKey: string;
   imageWidth: number;
   imageHeight: number;

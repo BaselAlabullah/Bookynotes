@@ -48,11 +48,12 @@ export default async function PageView({
   //
   // One signing request covers the whole view: a thumbnail for every filmstrip
   // frame, plus the full-size photograph for the page actually being read.
-  const [annotations, { thumbnails: previewUrls, full }] = await Promise.all([
+  const [annotations, { thumbnails: previewUrls, full, originals }] = await Promise.all([
     listAnnotationsForPage(user.id, page.id),
-    signPageImages(pages, [page.id]),
+    signPageImages(pages, [page.id], [page.id]),
   ]);
   const imageUrl = full.get(page.id) ?? null;
+  const originalImageUrl = originals.get(page.id) ?? null;
   const previousHref = previous
     ? `/books/${book.id}/pages/${previous.pageNumber}`
     : undefined;
@@ -94,6 +95,8 @@ export default async function PageView({
         <PageSurface
           pageId={page.id}
           imageUrl={imageUrl}
+          originalImageUrl={originalImageUrl}
+          originalPageCorners={page.pageCorners}
           imageStorageKey={page.storageKey}
           imageWidth={page.imageWidth}
           imageHeight={page.imageHeight}

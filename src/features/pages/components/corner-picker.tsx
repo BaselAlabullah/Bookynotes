@@ -77,6 +77,11 @@ export function CornerPicker({
 }: CornerPickerProps) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
+  const [focused, setFocused] = useState<number | null>(null);
+  const [surfaceSize, setSurfaceSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
 
   function pointFromEvent(event: React.PointerEvent): Point | null {
     const surface = surfaceRef.current;
@@ -95,6 +100,14 @@ export function CornerPicker({
     };
   }
 
+  function rememberSurfaceSize() {
+    const box = surfaceRef.current?.getBoundingClientRect();
+
+    if (!box) return;
+
+    setSurfaceSize({ width: box.width, height: box.height });
+  }
+
   function moveCorner(index: number, point: Point) {
     const next = [...corners] as Corners;
     next[index] = point;
@@ -103,6 +116,11 @@ export function CornerPicker({
 
   const outline = ordered(corners);
   const polygon = outline.map((corner) => `${corner.x},${corner.y}`).join(" ");
+  const activeIndex = dragging ?? focused;
+  const activeCorner =
+    activeIndex === null ? null : (corners[activeIndex] ?? null);
+  const loupeZoom = 3;
+  const loupeSize = 144;
 
   return (
     <div className="flex flex-col gap-2">
@@ -154,7 +172,9 @@ export function CornerPicker({
             aria-label={`Page corner ${index + 1}`}
             onPointerDown={(event) => {
               event.currentTarget.setPointerCapture(event.pointerId);
+              rememberSurfaceSize();
               setDragging(index);
+              setFocused(index);
             }}
             onPointerMove={(event) => {
               if (dragging !== index) return;
@@ -166,6 +186,13 @@ export function CornerPicker({
               setDragging(null);
             }}
             onPointerCancel={() => setDragging(null)}
+            onFocus={() => {
+              rememberSurfaceSize();
+              setFocused(index);
+            }}
+            onBlur={() => {
+              if (dragging === null) setFocused(null);
+            }}
             onKeyDown={(event) => {
               // Keyboard nudging, because a drag-only control is unusable
               // without a pointer. One percent a press, ten with shift.
@@ -186,16 +213,42 @@ export function CornerPicker({
               });
             }}
             style={{ left: `${corner.x * 100}%`, top: `${corner.y * 100}%` }}
-            className={`absolute size-6 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-paper bg-accent shadow-[0_1px_4px_rgba(0,0,0,0.5)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-              dragging === index ? "scale-125 cursor-grabbing" : ""
+            className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-paper bg-accent shadow-[0_1px_4px_rgba(0,0,0,0.5)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+              dragging === index
+                ? "size-4 cursor-grabbing ring-4 ring-accent/25"
+                : "size-5"
             }`}
           />
         ))}
+
+        {activeCorner && surfaceSize ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute right-3 top-3 z-10 overflow-hidden border-2 border-paper bg-paper shadow-[0_4px_18px_rgba(0,0,0,0.35)]"
+            style={{ width: loupeSize, height: loupeSize }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl}
+              alt=""
+              className="absolute max-w-none select-none"
+              draggable={false}
+              style={{
+                width: surfaceSize.width * loupeZoom,
+                height: surfaceSize.height * loupeZoom,
+                transform: `translate(${loupeSize / 2 - activeCorner.x * surfaceSize.width * loupeZoom}px, ${loupeSize / 2 - activeCorner.y * surfaceSize.height * loupeZoom}px)`,
+              }}
+            />
+            <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-accent" />
+            <span className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-accent" />
+            <span className="absolute left-1/2 top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-paper bg-accent" />
+          </div>
+        ) : null}
       </div>
 
       <p className="text-center text-xs text-ink-muted">
-        Drag each dot to a corner of the page. Arrow keys nudge; hold shift for
-        larger steps.
+        Drag each dot to a corner of the page. A zoom preview appears while you
+        adjust. Arrow keys nudge; hold shift for larger steps.
       </p>
     </div>
   );

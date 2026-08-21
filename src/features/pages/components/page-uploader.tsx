@@ -18,7 +18,7 @@ const MAX_BYTES = 10 * 1024 * 1024;
 
 type UploadState =
   | { status: "idle" }
-  | { status: "working"; step: string }
+  | { status: "working"; step: string; progress?: number }
   | { status: "error"; message: string };
 
 async function readErrorMessage(response: Response, fallback: string) {
@@ -35,6 +35,37 @@ function firstAcceptedImage(files: FileList | File[] | null | undefined) {
       ACCEPTED_CONTENT_TYPES.includes(file.type),
     ) ?? null
   );
+}
+
+function uploadFileToSignedUrl({
+  url,
+  file,
+  onProgress,
+}: {
+  url: string;
+  file: File;
+  onProgress: (progress: number) => void;
+}) {
+  return new Promise<{ status: number }>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    const uploadBody = new FormData();
+
+    uploadBody.append("cacheControl", "3600");
+    uploadBody.append("", file);
+
+    request.open("PUT", url);
+    request.setRequestHeader("x-upsert", "false");
+
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable || event.total === 0) return;
+      onProgress(Math.round((event.loaded / event.total) * 100));
+    };
+
+    request.onerror = () => reject(new Error("Upload failed before it reached storage."));
+    request.onabort = () => reject(new Error("Upload was cancelled."));
+    request.onload = () => resolve({ status: request.status });
+    request.send(uploadBody);
+  });
 }
 
 /**
@@ -160,26 +191,27 @@ export function PageUploader({
         return;
       }
 
-      setState({ status: "working", step: "Uploading…" });
+      setState({ status: "working", step: "Uploading...", progress: 0 });
 
       // Supabase's signed upload endpoint expects multipart form data with the
       // file under an empty field name, not a raw body. The signed URL already
       // carries its token, so no credentials are attached here — which is the
       // point: this request goes to Supabase, not to us.
-      const uploadBody = new FormData();
-      uploadBody.append("cacheControl", "3600");
-      uploadBody.append("", file);
-
-      const uploadResponse = await fetch(target.data.url, {
-        method: "PUT",
-        headers: { "x-upsert": "false" },
-        body: uploadBody,
+      const uploadResponse = await uploadFileToSignedUrl({
+        url: target.data.url,
+        file,
+        onProgress: (progress) =>
+          setState({
+            status: "working",
+            step: "Uploading...",
+            progress,
+          }),
       });
 
-      if (!uploadResponse.ok) {
+      if (uploadResponse.status < 200 || uploadResponse.status >= 300) {
         setState({
           status: "error",
-          message: `Upload failed (${uploadResponse.status}).`,
+          message: `Upload failed (${uploadResponse.status}). Keep the file selected and try again.`,
         });
         return;
       }
@@ -384,13 +416,31 @@ export function PageUploader({
       <div className="flex min-h-16 flex-wrap items-center justify-between gap-4 border-t border-rule bg-paper/45 px-6 py-3 sm:px-7">
         <div className="min-w-0 flex-1">
           {state.status === "working" ? (
-            <p role="status" className="text-sm text-ink-muted">
-              {state.step}
-            </p>
+            <div role="status" className="flex flex-col gap-2">
+              <p className="text-sm text-ink-muted">
+                {typeof state.progress === "number"
+                  ? `${state.step} ${state.progress}%`
+                  : state.step}
+              </p>
+              {typeof state.progress === "number" ? (
+                <div className="h-1.5 w-full max-w-xs overflow-hidden bg-paper-deep">
+                  <div
+                    className="h-full bg-accent transition-[width]"
+                    style={{ width: `${state.progress}%` }}
+                  />
+                </div>
+              ) : null}
+            </div>
           ) : state.status === "error" ? (
-            <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">
-              {state.message}
-            </p>
+            <div role="alert" className="border-l-2 border-danger pl-3">
+              <p className="text-sm text-danger">{state.message}</p>
+              {chosen ? (
+                <p className="mt-1 text-xs text-ink-muted">
+                  The photograph is still selected. Adjust the details or try
+                  again.
+                </p>
+              ) : null}
+            </div>
           ) : (
             <p className="text-xs text-ink-muted">
               The original photograph stays private.
@@ -403,7 +453,11 @@ export function PageUploader({
           disabled={isWorking}
           className="inline-flex min-w-32 items-center justify-center gap-3 bg-accent px-5 py-2.5 text-sm font-medium text-paper transition-colors hover:bg-danger disabled:cursor-wait disabled:opacity-60"
         >
-          {isWorking ? "Working…" : "Upload page"}
+          {isWorking
+            ? "Working..."
+            : state.status === "error" && chosen
+              ? "Try again"
+              : "Upload page"}
           <span aria-hidden className="text-base leading-none">
             →
           </span>

@@ -29,17 +29,22 @@ export type SignedPageImages = {
   thumbnails: Map<PageId, string>;
   /** Full-size image, only for the pages explicitly asked for. */
   full: Map<PageId, string>;
+  /** The unprocessed photograph, only for pages that kept one. */
+  originals: Map<PageId, string>;
 };
 
 export async function signPageImages(
   pages: Page[],
   fullSizeFor: PageId[] = [],
+  originalFor: PageId[] = [],
 ): Promise<SignedPageImages> {
   const wantsFull = new Set(fullSizeFor);
+  const wantsOriginal = new Set(originalFor);
 
   // Storage keys are unique per page, so this maps cleanly back afterwards.
   const smallKeyByPage = new Map<PageId, string>();
   const fullKeyByPage = new Map<PageId, string>();
+  const originalKeyByPage = new Map<PageId, string>();
 
   for (const page of pages) {
     smallKeyByPage.set(page.id, page.thumbnailStorageKey ?? page.storageKey);
@@ -47,15 +52,21 @@ export async function signPageImages(
     if (wantsFull.has(page.id)) {
       fullKeyByPage.set(page.id, page.storageKey);
     }
+
+    if (wantsOriginal.has(page.id) && page.originalStorageKey) {
+      originalKeyByPage.set(page.id, page.originalStorageKey);
+    }
   }
 
   const signed = await signedReadUrls([
     ...smallKeyByPage.values(),
     ...fullKeyByPage.values(),
+    ...originalKeyByPage.values(),
   ]);
 
   const thumbnails = new Map<PageId, string>();
   const full = new Map<PageId, string>();
+  const originals = new Map<PageId, string>();
 
   for (const [pageId, key] of smallKeyByPage) {
     const url = signed.get(key);
@@ -69,6 +80,10 @@ export async function signPageImages(
     if (url) full.set(pageId, url);
   }
 
-  return { thumbnails, full };
-}
+  for (const [pageId, key] of originalKeyByPage) {
+    const url = signed.get(key);
+    if (url) originals.set(pageId, url);
+  }
 
+  return { thumbnails, full, originals };
+}
