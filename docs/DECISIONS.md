@@ -2238,3 +2238,18 @@ This is a product-quality feature rather than a storage feature. It makes the
 app easier to demo because a reviewer can see that the system has lifecycle
 states, not just static cards: pages are captured, transcripts are generated,
 passages are extracted, and failures remain visible until handled.
+
+---
+
+## 0089 — Search results explain the match
+
+Search can match the reader's note, a selected passage, a model-read passage or
+the surrounding context. Showing a flat list of snippets made some correct hits
+look arbitrary, especially when the query matched context rather than the main
+passage.
+
+Results are now grouped by book and page, each hit is labelled by source, and
+context has its own snippet. Text annotations are marked as "no model" to make
+the free path visible beside image annotations that depend on Gemini. Loose
+punctuation-insensitive matches also get client-rendered term highlighting when
+Postgres cannot produce a `ts_headline` match.

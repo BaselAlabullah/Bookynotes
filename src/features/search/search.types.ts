@@ -32,9 +32,11 @@ export type SearchResult = {
   /** Snippets with matches marked, produced by `ts_headline`. */
   commentSnippet: string;
   passageSnippet: string | null;
+  contextSnippet: string | null;
 
   /** Where the model got to. A pending annotation is still searchable by note. */
   enrichmentStatus: "pending" | "complete" | "failed";
+  anchor: "region" | "text";
 
   /** `ts_rank_cd` score. Only meaningful relative to the other rows. */
   rank: number;

@@ -40,6 +40,7 @@ export default async function SearchPage({
   const results = parsed.success
     ? await searchAnnotations(user.id, parsed.data)
     : [];
+  const resultBookCount = new Set(results.map((result) => result.bookId)).size;
 
   const total = parsed.success ? 0 : await countSearchableAnnotations(user.id);
 
@@ -67,10 +68,11 @@ export default async function SearchPage({
         results.length > 0 ? (
           <section className="flex flex-col gap-4">
             <p className="text-xs uppercase tracking-[0.12em] text-ink-muted">
-              {results.length} {results.length === 1 ? "result" : "results"} for
+              {results.length} {results.length === 1 ? "result" : "results"} across{" "}
+              {resultBookCount} {resultBookCount === 1 ? "book" : "books"} for
               “{parsed.data}”
             </p>
-            <SearchResults results={results} />
+            <SearchResults results={results} query={parsed.data} />
           </section>
         ) : (
           <p className="text-ink-muted">

@@ -88,6 +88,7 @@ export async function searchAnnotations(
       bookId: books.id,
       bookTitle: books.title,
       bookAuthor: books.author,
+      anchor: annotations.anchor,
       enrichmentStatus: annotations.enrichmentStatus,
       commentSnippet: sql<string>`case when ${hasLexemes}
         then ts_headline('english', ${annotations.userComment}, ${tsQuery}, ${headlineOptions})
@@ -99,6 +100,12 @@ export async function searchAnnotations(
               when ${hasLexemes}
               then ts_headline('english', ${annotations.extractedPassage}, ${tsQuery}, ${headlineOptions})
               else ${annotations.extractedPassage} end`,
+      contextSnippet: sql<
+        string | null
+      >`case when ${annotations.extractedContext} is null then null
+              when ${hasLexemes}
+              then ts_headline('english', ${annotations.extractedContext}, ${tsQuery}, ${headlineOptions})
+              else ${annotations.extractedContext} end`,
       rank,
     })
     .from(annotations)
