@@ -10,6 +10,7 @@ import {
 import { and, eq } from "drizzle-orm";
 
 import { findPage } from "./pages.repository";
+import type { SavePageTranscriptInput } from "./pages.schema";
 import type { Page } from "./pages.types";
 
 /**
@@ -121,6 +122,34 @@ export async function transcribePageById(
       error instanceof VisionPermanentError,
     );
   }
+}
+
+export async function savePageTranscriptById(
+  userId: UserId,
+  pageId: PageId,
+  input: SavePageTranscriptInput,
+): Promise<TranscriptionOutcome> {
+  const text = input.text.trim();
+
+  if (text.length === 0) {
+    return { status: "failed", message: "Transcript text cannot be empty." };
+  }
+
+  const [updated] = await db
+    .update(pages)
+    .set({
+      transcript: text,
+      transcriptStatus: "complete",
+      transcriptError: null,
+      transcriptPageNumber: input.printedPageNumber?.trim() || null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(pages.id, pageId), eq(pages.userId, userId)))
+    .returning();
+
+  return updated
+    ? { status: "complete", page: updated }
+    : { status: "not-found" };
 }
 
 async function recordFailure(

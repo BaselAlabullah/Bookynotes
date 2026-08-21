@@ -87,6 +87,13 @@ export const completeUploadSchema = z.object({
 export type UploadTargetInput = z.infer<typeof uploadTargetSchema>;
 export type CompleteUploadInput = z.infer<typeof completeUploadSchema>;
 
+export const savePageTranscriptSchema = z.object({
+  text: z.string().trim().min(1).max(200_000),
+  printedPageNumber: z.string().trim().max(32).nullable().optional(),
+});
+
+export type SavePageTranscriptInput = z.infer<typeof savePageTranscriptSchema>;
+
 /**
  * Responses the browser has to read back. JSON crossing a network is `unknown`
  * regardless of who wrote the endpoint, so these are parsed rather than cast.

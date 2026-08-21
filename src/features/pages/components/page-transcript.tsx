@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type { PageId } from "@/db/ids";
-import { TranscriptReader } from "@/features/annotations/components/transcript-reader";
 import type { Annotation } from "@/features/annotations/annotations.types";
+import { TranscriptReader } from "@/features/annotations/components/transcript-reader";
 
 type PageTranscriptProps = {
   pageId: PageId;
@@ -24,15 +24,9 @@ type PageTranscriptProps = {
 /**
  * The page as text.
  *
- * Real text, not a picture of text — selectable, copyable, reflowing, and
- * readable by a screen reader. Rendering the transcript back into an image
- * would have looked like an e-book without being one, which is most of the
- * point.
- *
- * It is a second view of the page, never a replacement for it. A transcript is
- * what a model believed it read; names and unusual words are exactly where that
- * goes wrong, and a cleanly typeset page hides the mistake. The photograph is
- * always one click away, which is what makes trusting this reasonable.
+ * Real text, not a picture of text: selectable, copyable, reflowing, and
+ * readable by a screen reader. The photograph stays one click away because a
+ * transcript is an OCR/model interpretation, while the photograph is the page.
  */
 export function PageTranscript({
   pageId,
@@ -46,12 +40,17 @@ export function PageTranscript({
   onSelect,
 }: PageTranscriptProps) {
   const router = useRouter();
-  const [isWorking, setIsWorking] = useState(false);
+  const [isGeminiWorking, setIsGeminiWorking] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftText, setDraftText] = useState(transcript ?? "");
   const [failure, setFailure] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  async function transcribe(force = false) {
-    setIsWorking(true);
+  async function transcribeWithGemini(force = false) {
+    setIsGeminiWorking(true);
     setFailure(null);
+    setNotice(null);
 
     try {
       const response = await fetch(
@@ -66,38 +65,83 @@ export function PageTranscript({
             ? String((body as { error: unknown }).error)
             : "The page could not be read.";
         setFailure(message);
+        return;
       }
+
+      setIsEditing(false);
+      setNotice(
+        force
+          ? "Gemini re-read the page and replaced the transcript."
+          : "Gemini read the page and saved the transcript.",
+      );
     } catch {
       setFailure("Could not reach the transcription service.");
     } finally {
-      setIsWorking(false);
-      // The transcript is server-rendered, so ask the server for it again
-      // rather than holding a second copy here.
+      setIsGeminiWorking(false);
       router.refresh();
     }
   }
 
-  /**
-   * The cheapest integrity check available, and it costs one extra field.
-   *
-   * We already know which page this was filed as, and the model reports the
-   * number printed on the page it read. When those disagree, something is
-   * wrong: a mistyped page number, or a model that transcribed something other
-   * than what is in front of it. Neither is worth refusing over, and both are
-   * worth saying out loud — a clean transcript of the wrong page is exactly the
-   * failure a typeset page would hide.
-   */
+  async function saveEditedTranscript() {
+    const text = draftText.trim();
+
+    if (text.length === 0) {
+      setFailure("Transcript text cannot be empty.");
+      return;
+    }
+
+    setIsSavingEdit(true);
+    setFailure(null);
+    setNotice(null);
+
+    try {
+      const response = await fetch(`/api/pages/${pageId}/transcript`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!response.ok) {
+        const body: unknown = await response.json().catch(() => null);
+        const message =
+          typeof body === "object" && body !== null && "error" in body
+            ? String((body as { error: unknown }).error)
+            : "The transcript could not be saved.";
+        setFailure(message);
+        return;
+      }
+
+      setDraftText(text);
+      setIsEditing(false);
+      setNotice("Saved your transcript edits.");
+      router.refresh();
+    } catch {
+      setFailure("Could not save the transcript.");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
+
+  function startEditing() {
+    setDraftText(transcript ?? "");
+    setFailure(null);
+    setNotice(null);
+    setIsEditing(true);
+  }
+
+  function cancelEditing() {
+    setDraftText(transcript ?? "");
+    setFailure(null);
+    setIsEditing(false);
+  }
+
   const pageNumberDisagrees =
     printedPageNumber !== null &&
     printedPageNumber.trim() !== "" &&
     printedPageNumber.trim() !== String(pageNumber);
+  const isWorking = isGeminiWorking || isSavingEdit;
 
-  if (transcript) {
-    // Splitting into paragraphs belongs to TranscriptReader, which needs each
-    // one's offset in the transcript as well as its text. Doing it here too
-    // would mean two implementations that must agree about where a paragraph
-    // begins, and every annotation would be wrong by the difference if they
-    // ever drifted.
+  if (transcript && !isEditing) {
     return (
       <div className="flex flex-col gap-5">
         {pageNumberDisagrees ? (
@@ -111,6 +155,21 @@ export function PageTranscript({
           </p>
         ) : null}
 
+        {notice ? (
+          <p className="border-l-2 border-accent pl-3 text-sm text-ink-muted">
+            {notice}
+          </p>
+        ) : null}
+
+        {(failure ?? error) ? (
+          <p
+            role="alert"
+            className="border-l-2 border-danger pl-3 text-sm text-danger"
+          >
+            {failure ?? error}
+          </p>
+        ) : null}
+
         <TranscriptReader
           pageId={pageId}
           transcript={transcript}
@@ -121,16 +180,24 @@ export function PageTranscript({
 
         <div className="flex flex-wrap items-center gap-3 border-t border-rule pt-3">
           <p className="mr-auto text-xs text-ink-muted">
-            Read by a model from your photograph. Check the original if a name
-            or an unusual word looks wrong.
+            Read by Gemini from your photograph. Check the original if a name or
+            an unusual word looks wrong.
           </p>
           <button
             type="button"
-            onClick={() => transcribe(true)}
+            onClick={startEditing}
             disabled={isWorking}
             className="text-xs uppercase tracking-[0.1em] text-ink-muted underline decoration-rule underline-offset-4 hover:text-ink disabled:opacity-50"
           >
-            {isWorking ? "Reading…" : "Read again"}
+            Edit transcript
+          </button>
+          <button
+            type="button"
+            onClick={() => transcribeWithGemini(true)}
+            disabled={isWorking}
+            className="text-xs uppercase tracking-[0.1em] text-ink-muted underline decoration-rule underline-offset-4 hover:text-ink disabled:opacity-50"
+          >
+            {isGeminiWorking ? "Reading..." : "Read again with Gemini"}
           </button>
         </div>
       </div>
@@ -138,36 +205,82 @@ export function PageTranscript({
   }
 
   return (
-    <div className="mx-auto flex max-w-[52ch] flex-col items-start gap-4 border border-dashed border-rule p-8">
-      <p className="text-sm text-ink-muted">
-        {status === "failed"
-          ? "This page could not be read."
-          : "This page has not been read yet."}
-      </p>
+    <div className="mx-auto flex w-full max-w-[58ch] flex-col items-start gap-4 border border-dashed border-rule p-8">
+      {transcript ? (
+        <div>
+          <p className="text-xs uppercase tracking-[0.16em] text-ink-muted">
+            Transcript correction
+          </p>
+          <h2 className="mt-1 font-serif text-2xl">Edit transcript</h2>
+        </div>
+      ) : (
+        <p className="text-sm text-ink-muted">
+          {status === "failed"
+            ? "This page could not be read."
+            : "This page has not been read yet."}
+        </p>
+      )}
 
       {(failure ?? error) ? (
-        <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">
+        <p
+          role="alert"
+          className="border-l-2 border-danger pl-3 text-sm text-danger"
+        >
           {failure ?? error}
         </p>
       ) : null}
 
-      <button
-        type="button"
-        onClick={() => transcribe(status === "failed")}
-        disabled={isWorking}
-        className="bg-accent px-4 py-2 text-sm font-medium text-paper disabled:opacity-60"
-      >
-        {isWorking
-          ? "Reading the page…"
-          : status === "failed"
-            ? "Try again"
-            : "Read this page"}
-      </button>
+      {notice ? (
+        <p className="border-l-2 border-accent pl-3 text-sm text-ink-muted">
+          {notice}
+        </p>
+      ) : null}
 
-      <p className="text-xs text-ink-muted">
-        The whole page goes to the vision model once. The result is kept, so
-        this only happens a single time per page.
-      </p>
+      {isEditing ? (
+        <>
+          <textarea
+            value={draftText}
+            onChange={(event) => setDraftText(event.target.value)}
+            rows={18}
+            className="w-full resize-y border border-rule bg-paper-raised px-3 py-2 font-serif text-sm leading-6 outline-none focus:border-accent"
+          />
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={saveEditedTranscript}
+              disabled={isWorking || draftText.trim().length === 0}
+              className="bg-accent px-4 py-2 text-sm font-medium text-paper disabled:opacity-60"
+            >
+              {isSavingEdit ? "Saving..." : "Save transcript"}
+            </button>
+            <button
+              type="button"
+              onClick={cancelEditing}
+              disabled={isWorking}
+              className="text-sm text-ink-muted underline decoration-rule underline-offset-4 hover:text-ink disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={() => transcribeWithGemini(status === "failed")}
+            disabled={isWorking}
+            className="bg-accent px-4 py-2 text-sm font-medium text-paper disabled:opacity-60"
+          >
+            {isGeminiWorking ? "Reading the page..." : "Read with Gemini"}
+          </button>
+
+          <p className="text-xs text-ink-muted">
+            The whole page goes to Gemini once. The result is kept, and you can
+            edit it after reading if a name or unusual word is off.
+          </p>
+        </>
+      )}
     </div>
   );
 }
