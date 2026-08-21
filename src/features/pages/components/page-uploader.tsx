@@ -27,6 +27,16 @@ async function readErrorMessage(response: Response, fallback: string) {
   return parsed.success ? parsed.data.error : fallback;
 }
 
+function firstAcceptedImage(files: FileList | File[] | null | undefined) {
+  if (!files) return null;
+
+  return (
+    Array.from(files).find((file) =>
+      ACCEPTED_CONTENT_TYPES.includes(file.type),
+    ) ?? null
+  );
+}
+
 /**
  * Uploads a page image in three steps, and the middle one does not involve this
  * app at all:
@@ -38,10 +48,19 @@ async function readErrorMessage(response: Response, fallback: string) {
  * Step 2 is why this is a client component rather than a form: the file never
  * passes through our server, so there is nothing to submit to it.
  */
-export function PageUploader({ bookId }: { bookId: BookId }) {
+export function PageUploader({
+  bookId,
+  nextPageNumber,
+}: {
+  bookId: BookId;
+  nextPageNumber: number;
+}) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<UploadState>({ status: "idle" });
+  const [pageNumberValue, setPageNumberValue] = useState(
+    String(nextPageNumber),
+  );
 
   /**
    * The chosen file and a preview URL for it, kept together so the URL is
@@ -195,6 +214,7 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
 
       setState({ status: "idle" });
       chooseFile(null);
+      setPageNumberValue(String(pageNumber + 1));
       // The page list is server-rendered, so ask the server for it again rather
       // than trying to keep a client-side copy in step.
       router.refresh();
@@ -211,6 +231,30 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
   return (
     <form
       action={upload}
+      onDragOver={(event) => {
+        if (state.status === "working") return;
+        event.preventDefault();
+      }}
+      onDrop={(event) => {
+        if (state.status === "working") return;
+
+        const file = firstAcceptedImage(event.dataTransfer.files);
+
+        if (!file) return;
+
+        event.preventDefault();
+        chooseFile(file);
+      }}
+      onPaste={(event) => {
+        if (chosen || state.status === "working") return;
+
+        const file = firstAcceptedImage(event.clipboardData.files);
+
+        if (!file) return;
+
+        event.preventDefault();
+        chooseFile(file);
+      }}
       className="overflow-hidden border-y border-rule bg-paper-raised"
     >
       <div className="grid lg:grid-cols-[minmax(15rem,0.7fr)_minmax(0,1.6fr)]">
@@ -243,9 +287,21 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
                 name="pageNumber"
                 type="number"
                 required
-                placeholder="317"
+                value={pageNumberValue}
+                onChange={(event) => setPageNumberValue(event.target.value)}
+                placeholder={String(nextPageNumber)}
                 className="h-14 w-full border border-rule bg-paper px-4 font-serif text-xl tabular-nums outline-none transition-colors focus:border-accent"
               />
+              <span className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+                Suggested next page: {nextPageNumber}
+                <button
+                  type="button"
+                  onClick={() => setPageNumberValue(String(nextPageNumber))}
+                  className="underline decoration-rule underline-offset-4 hover:text-ink"
+                >
+                  Use it
+                </button>
+              </span>
             </label>
 
             <label className="flex min-w-0 flex-col gap-2 text-sm">
@@ -258,9 +314,10 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
                   name="file"
                   type="file"
                   accept={ACCEPTED_CONTENT_TYPES.join(",")}
+                  capture="environment"
                   required
                   onChange={(event) =>
-                    chooseFile(event.target.files?.[0] ?? null)
+                    chooseFile(firstAcceptedImage(event.target.files))
                   }
                   className="absolute inset-0 size-full cursor-pointer opacity-0"
                 />
@@ -280,7 +337,7 @@ export function PageUploader({ bookId }: { bookId: BookId }) {
                   <span className="mt-0.5 block truncate text-xs text-ink-muted">
                     {chosen
                       ? `${(chosen.file.size / 1024 / 1024).toFixed(1)} MB selected`
-                      : "JPEG, PNG or WebP · up to 10 MB"}
+                      : "JPEG, PNG or WebP - paste, drop, or browse"}
                   </span>
                 </span>
                 <span className="hidden text-xs font-medium text-accent sm:block">

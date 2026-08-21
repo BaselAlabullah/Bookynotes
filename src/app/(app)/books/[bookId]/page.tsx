@@ -51,6 +51,10 @@ export default async function BookPage({
       pages.map((page) => page.id),
     ),
   ]);
+  const nextPageNumber =
+    pages.length === 0
+      ? 1
+      : Math.max(...pages.map((page) => page.pageNumber)) + 1;
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-8">
@@ -66,7 +70,11 @@ export default async function BookPage({
         </p>
       ) : null}
 
-      <PageUploader bookId={book.id} />
+      <PageUploader
+        key={nextPageNumber}
+        bookId={book.id}
+        nextPageNumber={nextPageNumber}
+      />
 
       <PageGrid bookId={book.id} pages={pages} previewUrls={previewUrls} annotationCounts={annotationCounts} />
     </main>
