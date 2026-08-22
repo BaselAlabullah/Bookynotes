@@ -49,13 +49,17 @@ export async function prepareCropForModel(
 ): Promise<PreparedCrop> {
   const metadata = await sharp(pageImage).metadata();
 
-  // The decoder's dimensions, not the ones stored on the page row. Those were
-  // reported by the browser at upload time (DECISIONS 0028) and cannot be
-  // verified. Because the rectangle is a *fraction*, multiplying by the true
-  // decoded size is correct whatever the row claims — so a client that lied
-  // about dimensions still gets the right crop.
-  const width = metadata.width;
-  const height = metadata.height;
+  // Browsers display phone photographs with their EXIF orientation applied,
+  // and that displayed image is where the reader draws the rectangle. Sharp's
+  // plain metadata width/height describe the unrotated JPEG pixels, so using
+  // them would move a visual rectangle to a different passage when a phone
+  // stored its portrait shot sideways with an Orientation tag.
+  //
+  // Use the dimensions of the auto-oriented image here and apply the same
+  // orientation before extracting below. The rectangle then remains in the
+  // exact coordinate space in which it was drawn.
+  const width = metadata.autoOrient.width;
+  const height = metadata.autoOrient.height;
 
   if (!width || !height) {
     throw new Error("That page image could not be decoded.");
@@ -97,6 +101,7 @@ export async function prepareCropForModel(
   );
 
   const image = await sharp(pageImage)
+    .autoOrient()
     .extract({
       left: padded.left,
       top: padded.top,

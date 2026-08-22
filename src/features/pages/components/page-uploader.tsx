@@ -477,7 +477,6 @@ export function PageUploader({
                   name="file"
                   type="file"
                   accept={ACCEPTED_CONTENT_TYPES.join(",")}
-                  capture="environment"
                   required
                   onChange={(event) =>
                     chooseFile(firstAcceptedImage(event.target.files))
