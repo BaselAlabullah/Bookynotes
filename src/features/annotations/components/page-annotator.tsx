@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import type { PageId } from "@/db/ids";
+import { canonicalPageCorners } from "@/features/pages/pages.projection";
 
 import {
   createAnnotationAction,
@@ -784,7 +785,10 @@ function buildOriginalProjection(corners: PageCorners | null): Projection | null
     return null;
   }
 
-  const ordered = orderPageCorners(corners);
+  // The processor pulls the crop edge inward by 0.5% before warping. Use the
+  // same corners here so overlays on the retained photograph match the pixels
+  // that actually became the reading image.
+  const ordered = canonicalPageCorners(corners);
   const scanCorners: PageCorners = [
     { x: 0, y: 0 },
     { x: 1, y: 0 },
@@ -812,18 +816,6 @@ function buildOriginalProjection(corners: PageCorners | null): Projection | null
         : projected;
     },
   };
-}
-
-function orderPageCorners(corners: PageCorners): PageCorners {
-  const sortedByY = [...corners].sort((a, b) => a.y - b.y);
-  const [topLeft, topRight] = sortPairByX(sortedByY[0]!, sortedByY[1]!);
-  const [bottomLeft, bottomRight] = sortPairByX(sortedByY[2]!, sortedByY[3]!);
-
-  return [topLeft, topRight, bottomRight, bottomLeft];
-}
-
-function sortPairByX(a: Point, b: Point): [Point, Point] {
-  return a.x <= b.x ? [a, b] : [b, a];
 }
 
 function findHomography(from: PageCorners, to: PageCorners): HomographyMatrix | null {

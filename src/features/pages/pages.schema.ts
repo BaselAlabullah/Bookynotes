@@ -54,6 +54,14 @@ export const pageCornersSchema = z.tuple([
 
 export type PageCorners = z.infer<typeof pageCornersSchema>;
 
+/** Re-run page straightening against the retained source photograph. */
+export const updatePageCornersSchema = z.object({
+  pageId: z.uuid().transform(asPageId),
+  corners: pageCornersSchema,
+});
+
+export type UpdatePageCornersInput = z.infer<typeof updatePageCornersSchema>;
+
 /**
  * Step two: the file is uploaded, record the page.
  *

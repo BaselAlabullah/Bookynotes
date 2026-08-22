@@ -2309,3 +2309,19 @@ The uploader now reuses the inspected dimensions when they are available, and
 falls back to a single dimension read only when inspection could not complete.
 It is a small client-side optimization, but it removes duplicated work on the
 largest object the browser handles in the upload flow.
+
+---
+
+## 0094 — Saved page corners remain editable
+
+Corner placement is a visual judgement and can be wrong even when an upload
+succeeds. The retained source photograph now backs an editor on the saved page,
+so the four handles can be adjusted without uploading the photograph again.
+
+Re-straightening changes the coordinate system under region annotations. Those
+rectangles are therefore projected from the old flattened page, through the
+source photograph, into the new page. Page metadata and annotation rectangles
+change in one database transaction. New derived images use revision keys and
+are written first; obsolete derived objects are removed only after SQL commits.
+This avoids both stale browser caches and a row pointing at half-updated image
+geometry. If a proposed crop excludes an existing note, it is rejected.

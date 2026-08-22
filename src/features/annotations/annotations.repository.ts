@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { db } from "@/db/client";
+import { db, type DatabaseTransaction } from "@/db/client";
 import type { AnnotationId, PageId, UserId } from "@/db/ids";
 import { annotations } from "@/db/schema";
 
@@ -9,6 +9,7 @@ import type {
   EnrichmentResult,
   NewAnnotation,
   NewTextAnnotation,
+  NormalizedRect,
 } from "./annotations.types";
 
 type AnnotationContentUpdate = {
@@ -99,6 +100,38 @@ export async function listAnnotationsForPage(
     .from(annotations)
     .where(and(eq(annotations.pageId, pageId), eq(annotations.userId, userId)))
     .orderBy(asc(annotations.createdAt));
+}
+
+export async function updateRegionAnnotationRects(
+  transaction: DatabaseTransaction,
+  userId: UserId,
+  pageId: PageId,
+  updates: Array<{ annotationId: AnnotationId; rect: NormalizedRect }>,
+): Promise<boolean> {
+  for (const update of updates) {
+    const changed = await transaction
+      .update(annotations)
+      .set({
+        rectX: update.rect.x,
+        rectY: update.rect.y,
+        rectWidth: update.rect.width,
+        rectHeight: update.rect.height,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(annotations.id, update.annotationId),
+          eq(annotations.pageId, pageId),
+          eq(annotations.userId, userId),
+          eq(annotations.anchor, "region"),
+        ),
+      )
+      .returning({ id: annotations.id });
+
+    if (changed.length !== 1) return false;
+  }
+
+  return true;
 }
 
 export async function findAnnotation(

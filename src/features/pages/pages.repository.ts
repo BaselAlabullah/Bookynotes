@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db/client";
+import type { DatabaseTransaction } from "@/db/client";
 import type { BookId, PageId, UserId } from "@/db/ids";
 import { pages } from "@/db/schema";
 
@@ -63,6 +64,29 @@ export async function findPage(
     .limit(1);
 
   return page ?? null;
+}
+
+export async function updatePageGeometry(
+  transaction: DatabaseTransaction,
+  userId: UserId,
+  pageId: PageId,
+  input: Pick<
+    Page,
+    | "storageKey"
+    | "originalStorageKey"
+    | "thumbnailStorageKey"
+    | "pageCorners"
+    | "imageWidth"
+    | "imageHeight"
+  >,
+): Promise<Page | null> {
+  const [updated] = await transaction
+    .update(pages)
+    .set({ ...input, updatedAt: new Date() })
+    .where(and(eq(pages.id, pageId), eq(pages.userId, userId)))
+    .returning();
+
+  return updated ?? null;
 }
 
 export async function deletePage(

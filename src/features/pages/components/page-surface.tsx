@@ -7,6 +7,7 @@ import type { Annotation } from "@/features/annotations/annotations.types";
 import { PageAnnotator } from "@/features/annotations/components/page-annotator";
 
 import { PageTranscript } from "./page-transcript";
+import { PageCornerEditor } from "./page-corner-editor";
 
 type Point = { x: number; y: number };
 
@@ -96,7 +97,14 @@ export function PageSurface({
       </div>
 
       {view === "original" ? (
-        <PageAnnotator {...annotatorProps} annotations={annotations} />
+        <>
+          <PageCornerEditor
+            pageId={annotatorProps.pageId}
+            imageUrl={annotatorProps.originalImageUrl ?? annotatorProps.imageUrl}
+            initialCorners={annotatorProps.originalPageCorners}
+          />
+          <PageAnnotator {...annotatorProps} annotations={annotations} />
+        </>
       ) : (
         <PageTranscript
           pageId={annotatorProps.pageId}

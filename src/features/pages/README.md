@@ -70,6 +70,14 @@ The corners are normalized, like every other coordinate here, and stored on the
 row so the flattening can be redone without dragging them again. Uncheck
 "Straighten the page" and the photograph is stored exactly as taken.
 
+The page's Original view also offers **Adjust page corners** after upload. It
+always edits against the retained source photograph and writes the new flattened
+page and thumbnail under fresh keys before changing the row. Existing region
+annotations are projected from the old crop through the source photograph into
+the new crop in the same database transaction as the page update. A crop that
+would remove an existing annotation is refused rather than silently moving or
+destroying the note.
+
 ## Reading view
 
 Every page has two views, and they are genuinely different things rather than

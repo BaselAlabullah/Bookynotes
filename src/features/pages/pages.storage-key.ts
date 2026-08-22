@@ -64,3 +64,13 @@ export function isStorageKeyOwnedBy(
 export function flattenedKeyFor(storageKey: string): string {
   return storageKey.replace(/\.[^./]+$/, "") + ".flat.jpg";
 }
+
+/**
+ * A fresh derived key for editing an existing crop.
+ *
+ * The old flattened image stays readable until the database points at this
+ * one, making the multi-system update recoverable if processing or SQL fails.
+ */
+export function revisedFlattenedKeyFor(storageKey: string): string {
+  return `${storageKey.replace(/\.[^./]+$/, "")}.flat.${crypto.randomUUID()}.jpg`;
+}

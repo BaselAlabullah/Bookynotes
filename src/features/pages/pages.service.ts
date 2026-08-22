@@ -1,10 +1,14 @@
 import { isUniqueViolation } from "@/db/errors";
+import { db } from "@/db/client";
 import type { PageId, UserId } from "@/db/ids";
 import {
   countAnnotationStatusesForPages,
   countAnnotationsForPages,
+  listAnnotationsForPage,
   type AnnotationStatusCounts,
+  updateRegionAnnotationRects,
 } from "@/features/annotations/annotations.repository";
+import { isRegionAnnotation } from "@/features/annotations/annotations.types";
 import { findBook } from "@/features/books/books.repository";
 import {
   isPageProcessorConfigured,
@@ -20,10 +24,23 @@ import {
 } from "@/integrations/storage/storage.client";
 import type { SignedUpload } from "@/integrations/storage/storage.types";
 
-import { deletePage, findPage, insertPage } from "./pages.repository";
-import type { CompleteUploadInput, UploadTargetInput } from "./pages.schema";
+import {
+  deletePage,
+  findPage,
+  insertPage,
+  updatePageGeometry,
+} from "./pages.repository";
+import type {
+  CompleteUploadInput,
+  UpdatePageCornersInput,
+  UploadTargetInput,
+} from "./pages.schema";
+import { remapRectBetweenPageCrops } from "./pages.projection";
 import { buildStorageKey, isStorageKeyOwnedBy } from "./pages.storage-key";
-import { flattenedKeyFor } from "./pages.storage-key";
+import {
+  flattenedKeyFor,
+  revisedFlattenedKeyFor,
+} from "./pages.storage-key";
 import { buildThumbnail, thumbnailKeyFor } from "./pages.thumbnail";
 import type { Page } from "./pages.types";
 
@@ -261,6 +278,136 @@ async function tryBuildThumbnail(
   } catch {
     return null;
   }
+}
+
+export type UpdatePageCornersResult =
+  | { status: "updated"; page: Page; cleanupIncomplete: boolean }
+  | { status: "not-found" }
+  | { status: "processor-unavailable" }
+  | { status: "source-unreadable" }
+  | { status: "processing-failed" }
+  | { status: "annotations-cannot-be-remapped" }
+  | { status: "update-failed" };
+
+/**
+ * Re-straighten a saved page from its retained source photograph.
+ *
+ * New objects are written under fresh keys before SQL changes. The page row
+ * and every region annotation then move together in one transaction; only
+ * after that succeeds are the obsolete derived objects removed.
+ */
+export async function updatePageCorners(
+  userId: UserId,
+  input: UpdatePageCornersInput,
+): Promise<UpdatePageCornersResult> {
+  const page = await findPage(userId, input.pageId);
+
+  if (!page) return { status: "not-found" };
+  if (!isPageProcessorConfigured()) return { status: "processor-unavailable" };
+
+  const sourceStorageKey = page.originalStorageKey ?? page.storageKey;
+  const source = await tryReadObject(sourceStorageKey);
+
+  if (!source) return { status: "source-unreadable" };
+
+  const regionAnnotations = (await listAnnotationsForPage(userId, page.id)).filter(
+    isRegionAnnotation,
+  );
+
+  // An automatically detected old crop retained no corners, so there is no
+  // honest transform back to the source photograph. Editing remains safe when
+  // no image annotations exist; otherwise the user must keep the old crop.
+  if (page.originalStorageKey && !page.pageCorners && regionAnnotations.length > 0) {
+    return { status: "annotations-cannot-be-remapped" };
+  }
+
+  const oldCorners = page.originalStorageKey ? page.pageCorners : null;
+  const annotationUpdates = regionAnnotations.map((annotation) => ({
+    annotationId: annotation.id,
+    rect: remapRectBetweenPageCrops(
+      {
+        x: annotation.rectX,
+        y: annotation.rectY,
+        width: annotation.rectWidth,
+        height: annotation.rectHeight,
+      },
+      oldCorners,
+      input.corners,
+    ),
+  }));
+
+  if (annotationUpdates.some((update) => update.rect === null)) {
+    return { status: "annotations-cannot-be-remapped" };
+  }
+
+  const processed = await rectifyPage(source, "image/jpeg", input.corners);
+
+  if (!processed?.rectified) return { status: "processing-failed" };
+
+  const newStorageKey = revisedFlattenedKeyFor(sourceStorageKey);
+  const newThumbnailKey = thumbnailKeyFor(newStorageKey);
+  let thumbnailStored = false;
+
+  try {
+    await uploadObject(newStorageKey, processed.image, "image/jpeg");
+    const thumbnail = await buildThumbnail(processed.image);
+    await uploadObject(newThumbnailKey, thumbnail, "image/jpeg");
+    thumbnailStored = true;
+  } catch {
+    await removeObjects([newStorageKey, newThumbnailKey]).catch(() => undefined);
+    return { status: "update-failed" };
+  }
+
+  let updatedPage: Page | null = null;
+
+  try {
+    updatedPage = await db.transaction(async (transaction) => {
+      const updated = await updatePageGeometry(transaction, userId, page.id, {
+        storageKey: newStorageKey,
+        originalStorageKey: sourceStorageKey,
+        thumbnailStorageKey: thumbnailStored ? newThumbnailKey : null,
+        pageCorners: input.corners,
+        imageWidth: processed.width,
+        imageHeight: processed.height,
+      });
+
+      if (!updated) throw new Error("Page disappeared during corner update.");
+
+      const annotationsUpdated = await updateRegionAnnotationRects(
+        transaction,
+        userId,
+        page.id,
+        annotationUpdates.map((update) => ({
+          annotationId: update.annotationId,
+          // Proven non-null by the check above.
+          rect: update.rect!,
+        })),
+      );
+
+      if (!annotationsUpdated) {
+        throw new Error("An annotation disappeared during corner update.");
+      }
+
+      return updated;
+    });
+  } catch {
+    await removeObjects([newStorageKey, newThumbnailKey]).catch(() => undefined);
+    return { status: "update-failed" };
+  }
+
+  const obsoleteKeys = [
+    page.storageKey !== sourceStorageKey ? page.storageKey : null,
+    page.thumbnailStorageKey,
+  ].filter((key): key is string => key !== null);
+  let cleanupIncomplete = false;
+
+  try {
+    await removeObjects(obsoleteKeys);
+  } catch {
+    cleanupIncomplete = true;
+  }
+
+  return { status: "updated", page: updatedPage, cleanupIncomplete };
 }
 
 export async function getPageDeletionImpacts(

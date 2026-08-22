@@ -51,3 +51,6 @@ export const db = drizzle(connection, { schema });
 
 /** The type every repository takes when it needs to run inside a transaction. */
 export type Database = typeof db;
+export type DatabaseTransaction = Parameters<
+  Parameters<Database["transaction"]>[0]
+>[0];
