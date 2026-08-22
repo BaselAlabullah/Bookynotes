@@ -26,7 +26,7 @@ type AnnotationCanvasProps = {
    * CSS rather than by producing a "cleaned" image, which would move the page
    * out from under its own annotations.
    */
-  scanView: boolean;
+  scanLike: boolean;
   annotations: Annotation[];
   draft: NormalizedRect | null;
   selectedId: string | null;
@@ -86,7 +86,7 @@ export function AnnotationCanvas({
   imageWidth,
   imageHeight,
   zoom,
-  scanView,
+  scanLike,
   annotations,
   draft,
   selectedId,
@@ -210,7 +210,7 @@ export function AnnotationCanvas({
           className="block h-auto w-full select-none"
           draggable={false}
           style={
-            scanView
+            scanLike
               ? { filter: "grayscale(1) contrast(1.4) brightness(1.06)" }
               : undefined
           }

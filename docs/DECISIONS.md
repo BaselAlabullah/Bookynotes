@@ -2325,3 +2325,16 @@ change in one database transaction. New derived images use revision keys and
 are written first; obsolete derived objects are removed only after SQL commits.
 This avoids both stale browser caches and a row pointing at half-updated image
 geometry. If a proposed crop excludes an existing note, it is rejected.
+
+---
+
+## 0095 — Corrected pages retain their natural colour
+
+Perspective correction and visual styling are separate operations. The page
+processor now warps the source photograph without permanently brightening or
+flattening its colours. The corrected page is the default annotation surface,
+with the retained source photograph available through a separate control.
+
+A scan-like appearance remains available as an optional CSS filter. It changes
+only what the reader sees, so turning it on or off cannot move a margin note or
+alter the image stored for later extraction.

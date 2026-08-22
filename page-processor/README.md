@@ -1,7 +1,7 @@
 # page-processor
 
 A small FastAPI service that flattens the perspective out of a photographed book
-page and evens out its lighting.
+page while preserving its natural colours.
 
 It is the one Python component in an otherwise TypeScript project, and it is
 Python for a specific reason: OpenCV. Detecting a page outline and warping it
@@ -12,7 +12,6 @@ ecosystem.
 app/
   main.py      the FastAPI app and its single endpoint
   rectify.py   finding the page outline, and the perspective warp
-  clean.py     illumination correction
   config.py    settings, validated at import
 tests/
   test_rectify.py   synthetic warped pages with known ground truth
@@ -63,9 +62,10 @@ placed them, so substituting something else would be baffling.
 3. **Size the output from the page's own edges.** The *longer* of each opposing
    pair — the near edge of a tilted page is longer than the far one, and picking
    the far one squashes the result.
-4. **Warp, then clean.** Flat-field division to remove the lighting gradient,
-   then CLAHE on the L channel of LAB so brightening a shadowed corner does not
-   shift the colour of the paper.
+4. **Warp without restyling.** Perspective correction changes the page shape,
+   but the returned pixels keep the photograph's natural colour and lighting.
+   The web app offers a scan-like display filter when a reader wants higher
+   contrast; that choice never changes the saved page or its annotation geometry.
 
 Everything else in `rectify.py` is guarding against step 1 finding something
 that is not a page — the image border, a shadow, a book cover on a desk.

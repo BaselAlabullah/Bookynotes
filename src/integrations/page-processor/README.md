@@ -1,7 +1,7 @@
 # integrations/page-processor
 
 The client for the Python service in `page-processor/`, which flattens the
-perspective out of page photographs and evens their lighting.
+perspective out of page photographs while preserving their natural appearance.
 
 ```
 page-processor.types.ts    RectifiedPage, PageProcessorError
@@ -17,6 +17,7 @@ Every failure returns null rather than throwing: not configured, unreachable,
 timed out, refused the image, or looked and found no page. Only the caller knows
 whether any of that is worth mentioning, and in this case none of it is.
 
-The work happens in `pages.service.ts` at upload time, before the `pages` row
-exists — which is the only moment changing an image's geometry is safe, because
-nothing can be anchored to it yet. See DECISIONS 0065.
+The initial work happens in `pages.service.ts` at upload time, before the
+`pages` row exists. Saved corners can later be adjusted through the same client;
+existing note rectangles are projected into the replacement geometry in the
+same database transaction. See DECISIONS 0065 and 0094.

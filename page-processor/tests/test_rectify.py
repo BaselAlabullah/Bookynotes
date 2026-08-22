@@ -17,7 +17,6 @@ import sys
 import cv2
 import numpy as np
 
-from app.clean import clean
 from app.rectify import (
     InvalidCorners,
     find_page_quad,
@@ -159,25 +158,6 @@ def test_a_photo_with_no_page_is_returned_untouched() -> None:
     assert not result.rectified
     assert result.confidence == 0.0
     assert result.image is noise, "the original should be handed straight back"
-
-
-def test_cleaning_flattens_the_lighting_gradient() -> None:
-    """After cleaning, the two ends of the page should be lit alike."""
-    photo, _ = photograph(build_flat_page())
-    page = rectify(photo).image
-
-    def corner_brightness(image: np.ndarray) -> tuple[float, float]:
-        grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        h, w = grey.shape
-        box = min(h, w) // 6
-        return float(grey[:box, :box].mean()), float(grey[-box:, -box:].mean())
-
-    before = corner_brightness(page)
-    after = corner_brightness(clean(page))
-
-    assert abs(after[0] - after[1]) < abs(before[0] - before[1]), (
-        f"cleaning did not reduce the gradient: {before} -> {after}"
-    )
 
 
 def test_manual_corners_flatten_a_page_detection_would_miss() -> None:

@@ -75,6 +75,7 @@ type EnrichmentRequestResult = {
 };
 
 type CopyMode = "note" | "passage" | "all";
+type PageImageView = "corrected" | "source";
 
 function formatPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
@@ -104,7 +105,9 @@ export function PageAnnotator({
 }: PageAnnotatorProps) {
   const router = useRouter();
   const [zoomIndex, setZoomIndex] = useState(0);
-  const [scanView, setScanView] = useState(!originalImageUrl);
+  const [pageImageView, setPageImageView] =
+    useState<PageImageView>("corrected");
+  const [scanLike, setScanLike] = useState(false);
   const [draft, setDraft] = useState<NormalizedRect | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(() =>
     annotations.some((annotation) => annotation.id === initialSelectedId)
@@ -132,7 +135,8 @@ export function PageAnnotator({
   const [enriching, setEnriching] = useState<ReadonlySet<string>>(new Set());
 
   const zoom = ZOOM_STEPS[zoomIndex] ?? 1;
-  const isShowingOriginalPhoto = Boolean(originalImageUrl) && !scanView;
+  const isShowingOriginalPhoto =
+    Boolean(originalImageUrl) && pageImageView === "source";
   const originalProjection = useMemo(
     () => buildOriginalProjection(originalPageCorners),
     [originalPageCorners],
@@ -425,13 +429,48 @@ export function PageAnnotator({
           <button type="button" onClick={() => setZoomIndex((index) => Math.min(ZOOM_STEPS.length - 1, index + 1))} disabled={zoomIndex === ZOOM_STEPS.length - 1} className="flex size-8 items-center justify-center border border-rule disabled:opacity-35" aria-label="Zoom in">+</button>
         </div>
 
-        <label className="flex cursor-pointer items-center gap-2 text-xs uppercase tracking-[0.1em] text-ink-muted">
-          <input type="checkbox" checked={scanView} onChange={(event) => setScanView(event.target.checked)} className="accent-accent" />
-          Scan view
-        </label>
+        {originalImageUrl ? (
+          <div
+            role="group"
+            aria-label="Page image"
+            className="flex border border-rule text-xs uppercase tracking-[0.1em]"
+          >
+            {(
+              [
+                ["corrected", "Corrected page"],
+                ["source", "Source photo"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={pageImageView === value}
+                onClick={() => setPageImageView(value)}
+                className={`px-3 py-1.5 ${
+                  pageImageView === value
+                    ? "bg-accent text-paper"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {!isShowingOriginalPhoto ? (
+          <label className="flex cursor-pointer items-center gap-2 text-xs uppercase tracking-[0.1em] text-ink-muted">
+            <input
+              type="checkbox"
+              checked={scanLike}
+              onChange={(event) => setScanLike(event.target.checked)}
+              className="accent-accent"
+            />
+            Scan-like
+          </label>
+        ) : null}
         <p className="mr-auto text-sm text-ink-muted">
           {isShowingOriginalPhoto && !originalProjection
-            ? "Original photograph. Scan view is required to place notes on this older page."
+            ? "Source photograph. Use the corrected page to place notes on this older page."
             : "Drag across a passage to begin a note."}
         </p>
         {incompleteRegionAnnotations.length > 0 ? (
@@ -482,7 +521,7 @@ export function PageAnnotator({
               imageWidth={imageWidth}
               imageHeight={imageHeight}
               zoom={zoom}
-              scanView={!originalImageUrl && scanView}
+              scanLike={scanLike}
               annotations={orderedAnnotations}
               draft={draft}
               selectedId={selectedId}

@@ -36,7 +36,8 @@ searchable across your whole library.
 - Upload page photographs by browsing, dragging or pasting; optional corner
   adjustment flattens pages when the local processor is available.
 - Run a browser-side capture quality check before upload.
-- Annotate both the cleaned scan and the original photograph.
+- Annotate the natural-colour corrected page or source photograph, with an
+  optional scan-like display filter.
 - Extract passages from image annotations with Gemini/OpenRouter, one retryable
   request at a time.
 - Paste or edit full-page transcripts manually, or ask Gemini to read the whole
@@ -182,15 +183,15 @@ malformed, by design — see `src/config/env.public.ts`.
 ## The page-processor (optional)
 
 `page-processor/` is a small FastAPI service that flattens the perspective out
-of a photographed page and evens its lighting. It is the one Python component,
-and it is Python for one reason: OpenCV.
+of a photographed page while retaining its colour and lighting. It is the one
+Python component, and it is Python for one reason: OpenCV.
 
 ```
-photograph of a tilted, unevenly lit page
+photograph of a tilted page
         |  POST /rectify
         v
-flat, square, evenly lit page  ->  becomes the canonical image
-                                   the photograph is kept alongside it
+flat, square, natural-colour page  ->  becomes the canonical image
+                                      the photograph is kept alongside it
 ```
 
 You drag four handles onto the page corners before uploading, and it warps to

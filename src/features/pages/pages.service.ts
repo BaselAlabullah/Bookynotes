@@ -235,8 +235,8 @@ async function tryRectify(
     const result = await rectifyPage(uploaded, "image/jpeg", corners);
 
     // Null means unreachable or refused. `rectified: false` means it looked and
-    // found no page, so the picture came back cleaned but not warped — not
-    // worth a second object and a second key.
+    // found no page, so there is no derived geometry worth a second object and
+    // a second key.
     if (!result || !result.rectified) {
       return untouched;
     }

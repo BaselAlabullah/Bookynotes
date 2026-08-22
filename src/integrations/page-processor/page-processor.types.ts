@@ -1,8 +1,9 @@
 /**
  * The contract with the page-processor service.
  *
- * A photograph goes out, a flattened and evenly-lit page comes back. The
- * service holds no user data and makes no authorization decisions — ownership
+ * A photograph goes out, and a flattened page with its natural colours comes
+ * back. The service holds no user data and makes no authorization decisions —
+ * ownership
  * is established before anything reaches it — which is what makes it safe to
  * run somewhere other than production.
  */

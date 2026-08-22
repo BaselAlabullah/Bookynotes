@@ -1,6 +1,6 @@
 """The page-processor service.
 
-One endpoint. An image goes in, a flattened and evenly-lit version comes out.
+One endpoint. An image goes in and a perspective-corrected version comes out.
 
 It holds no user data, has no database, and makes no authorization decisions —
 the Next app has already established who owns the page before it calls here.
@@ -17,13 +17,12 @@ import numpy as np
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
 
-from .clean import clean
 from .config import API_KEY, MAX_UPLOAD_BYTES, OUTPUT_QUALITY
 from .rectify import InvalidCorners, rectify, rectify_with_corners
 
 app = FastAPI(
     title="Bookynotes page-processor",
-    description="Flattens and cleans photographs of book pages.",
+    description="Flattens photographs of book pages while preserving their colours.",
     version="0.1.0",
 )
 
@@ -111,16 +110,14 @@ async def rectify_page(
             # baffling. The caller can say what went wrong.
             raise HTTPException(status_code=400, detail=str(error)) from error
 
-    processed = clean(result.image)
-
     encoded, buffer = cv2.imencode(
-        ".jpg", processed, [int(cv2.IMWRITE_JPEG_QUALITY), OUTPUT_QUALITY]
+        ".jpg", result.image, [int(cv2.IMWRITE_JPEG_QUALITY), OUTPUT_QUALITY]
     )
 
     if not encoded:
         raise HTTPException(status_code=500, detail="Could not encode the result.")
 
-    height, width = processed.shape[:2]
+    height, width = result.image.shape[:2]
 
     headers = {
         "X-Rectified": "true" if result.rectified else "false",
