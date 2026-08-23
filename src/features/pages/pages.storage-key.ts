@@ -44,14 +44,28 @@ export function buildStorageKey(
  * Whether a storage key claimed by a client really sits under this user's and
  * book's prefix. Called before any page row is written.
  */
+const OBJECT_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:jpg|png|webp)$/;
+
 export function isStorageKeyOwnedBy(
   storageKey: string,
   userId: UserId,
   bookId: BookId,
 ): boolean {
-  return new RegExp(
-    `^${userId}/${bookId}/[0-9a-f-]{36}\.(jpg|png|webp)$`,
-  ).test(storageKey);
+  // The prefix is compared as a string and the filename against a fixed
+  // pattern, rather than building one regex around the ids.
+  //
+  // Two reasons. Interpolating an id into a pattern makes any metacharacter it
+  // might one day contain part of the matcher — these are UUIDs today, but a
+  // string comparison cannot be wrong about that later. And the previous
+  // pattern was written `\.` inside a template literal, where `\.` is not an
+  // escape sequence and collapses to a bare `.`, so the separator before the
+  // extension matched any character at all.
+  const prefix = `${userId}/${bookId}/`;
+
+  return (
+    storageKey.startsWith(prefix) &&
+    OBJECT_NAME.test(storageKey.slice(prefix.length))
+  );
 }
 
 /**

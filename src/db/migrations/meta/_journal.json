@@ -78,6 +78,13 @@
       "when": 1787254228850,
       "tag": "0010_text_annotations",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787474611038,
+      "tag": "0011_searchable_text",
+      "breakpoints": true
     }
   ]
 }

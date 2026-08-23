@@ -224,6 +224,59 @@ def test_bad_corners_are_refused_rather_than_guessed_at() -> None:
         raise AssertionError(f"{label}: should have been refused")
 
 
+def test_order_corners_returns_each_corner_once_on_a_diamond() -> None:
+    """Regression: extremes of x + y and x - y tie on a diamond.
+
+    `argmin` then returned the same index twice, duplicating one corner and
+    dropping another, which made the warp degenerate.
+    """
+    diamond = np.array(
+        [[0.5, 0.0], [1.0, 0.5], [0.5, 1.0], [0.0, 0.5]], dtype="float32"
+    )
+
+    ordered = order_corners(diamond)
+
+    assert len({(float(p[0]), float(p[1])) for p in ordered}) == 4
+
+
+def test_order_corners_ignores_the_order_the_points_arrive_in() -> None:
+    quad = np.array(
+        [[0.1, 0.1], [0.9, 0.12], [0.88, 0.9], [0.12, 0.88]], dtype="float32"
+    )
+
+    for shift in range(4):
+        assert np.allclose(order_corners(np.roll(quad, shift, axis=0)), order_corners(quad))
+
+
+def test_order_corners_matches_the_typescript_ordering() -> None:
+    """The two implementations must agree.
+
+    This one orders the pixels; `orderPageCorners` in
+    src/features/pages/pages.projection.ts orders the annotation coordinates
+    projected onto them. If they disagree about a quadrilateral, notes land
+    somewhere the reader did not put them.
+    """
+    quads = [
+        [[0.05, 0.04], [0.95, 0.05], [0.96, 0.95], [0.04, 0.94]],
+        [[0.5, 0.0], [1.0, 0.5], [0.5, 1.0], [0.0, 0.5]],
+        [[0.3, 0.0], [1.0, 0.3], [0.7, 1.0], [0.0, 0.7]],
+        [[0.2, 0.1], [0.8, 0.1], [0.9, 0.9], [0.1, 0.9]],
+    ]
+    # Produced by orderPageCorners for exactly these inputs.
+    expected = [
+        [[0.05, 0.04], [0.95, 0.05], [0.96, 0.95], [0.04, 0.94]],
+        [[0.0, 0.5], [0.5, 0.0], [1.0, 0.5], [0.5, 1.0]],
+        [[0.3, 0.0], [1.0, 0.3], [0.7, 1.0], [0.0, 0.7]],
+        [[0.2, 0.1], [0.8, 0.1], [0.9, 0.9], [0.1, 0.9]],
+    ]
+
+    for quad, want in zip(quads, expected):
+        assert np.allclose(
+            order_corners(np.array(quad, dtype="float32")),
+            np.array(want, dtype="float32"),
+        )
+
+
 def main() -> int:
     tests = [value for name, value in globals().items() if name.startswith("test_")]
     failures = 0

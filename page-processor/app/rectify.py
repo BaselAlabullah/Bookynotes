@@ -79,22 +79,42 @@ def order_corners(points: np.ndarray) -> np.ndarray:
     image that is rotated or mirrored — it looks like a bug in the transform,
     and it is really a bug here.
 
-    The trick: for the top-left corner, x + y is smallest; for bottom-right it
-    is largest. For the other two, x - y separates them. It relies on nothing
-    but the coordinates themselves.
+    This used to pick corners by extremes: smallest x + y is top-left, largest
+    is bottom-right, and x - y separates the other two. That is wrong whenever
+    two corners tie on one of those tests. On a diamond two corners share the
+    minimum sum, `argmin` returns the same index twice, and the result contains
+    a duplicate point with another dropped — which makes the warp degenerate.
+
+    Sorting by angle around the centroid cannot duplicate a point, because it
+    is a permutation of the input. Angles increase clockwise in image
+    coordinates, where y grows downward, so ascending order already walks
+    top-left, top-right, bottom-right, bottom-left. Only the starting phase is
+    unknown, and rotating the cycle to begin at the corner nearest the origin
+    fixes that.
+
+    Must match `orderPageCorners` in src/features/pages/pages.projection.ts.
+    That function orders the coordinates of annotations projected onto the
+    image this one orders the pixels of; if the two disagree about a quad, the
+    notes land somewhere the reader did not put them.
     """
     points = points.reshape(4, 2).astype("float32")
-    ordered = np.zeros((4, 2), dtype="float32")
+    centre = points.mean(axis=0)
+    angles = np.arctan2(points[:, 1] - centre[1], points[:, 0] - centre[0])
+    clockwise = points[np.argsort(angles, kind="stable")]
 
-    coordinate_sum = points.sum(axis=1)
-    ordered[0] = points[np.argmin(coordinate_sum)]  # top-left
-    ordered[2] = points[np.argmax(coordinate_sum)]  # bottom-right
+    # Which corner deserves to be called top-left on a diamond is ambiguous.
+    # The tie-breaks exist so it resolves identically here and in TypeScript,
+    # not because one answer is more correct than the other.
+    start = min(
+        range(4),
+        key=lambda index: (
+            clockwise[index][0] + clockwise[index][1],
+            clockwise[index][0],
+            clockwise[index][1],
+        ),
+    )
 
-    coordinate_diff = np.diff(points, axis=1)
-    ordered[1] = points[np.argmin(coordinate_diff)]  # top-right
-    ordered[3] = points[np.argmax(coordinate_diff)]  # bottom-left
-
-    return ordered
+    return np.roll(clockwise, -start, axis=0).astype("float32")
 
 
 def _corner_angles(quad: np.ndarray) -> list[float]:

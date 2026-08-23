@@ -67,13 +67,15 @@ export async function searchAnnotations(
   }
 
   const tsQuery = buildQuery(query);
-  const searchableText = sql<string>`regexp_replace(
-    lower(concat_ws(' ', ${annotations.userComment}, ${annotations.extractedPassage}, ${annotations.extractedContext})),
-    '[^[:alnum:]]+',
-    ' ',
-    'g'
-  )`;
-  const looseMatch = sql`${searchableText} like ${`%${looseQuery}%`}`;
+  // `search_text` is a stored generated column holding exactly this
+  // normalization, indexed with trigrams. Normalizing inline here instead
+  // would force Postgres to compute it for every row, and an OR against a
+  // non-indexable branch makes the planner abandon the GIN index for the whole
+  // query — see DECISIONS 0096.
+  //
+  // `looseQuery` has already had everything outside [a-z0-9 ] stripped, so it
+  // cannot smuggle in a `%` or `_` and widen its own pattern.
+  const looseMatch = sql`${annotations.searchText} like ${`%${looseQuery}%`}`;
   const hasLexemes = sql`numnode(${tsQuery}) > 0`;
 
   // Computed once and referenced twice — in the ORDER BY and in the selected

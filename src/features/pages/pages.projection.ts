@@ -68,17 +68,64 @@ export function canonicalPageCorners(corners: PageCorners | null): PageCorners {
   })) as PageCorners;
 }
 
+/**
+ * Sort four corners into top-left, top-right, bottom-right, bottom-left.
+ *
+ * The obvious heuristic — smallest `x + y` is top-left, largest is
+ * bottom-right, and `x - y` separates the other two — is what this used to do,
+ * and it is wrong on any quadrilateral where two corners tie on one of those
+ * tests. A diamond is the clean example: two corners share the minimum sum,
+ * `indexOf` returns the same index twice, one corner is dropped and another
+ * appears twice. The homography built from that is singular, so a corner save
+ * was refused with a message blaming the annotations.
+ *
+ * Sorting by angle around the centroid cannot produce a duplicate, because it
+ * is a permutation of the input. Angles increase clockwise on screen — y grows
+ * downward — so ascending order already walks top-left, top-right,
+ * bottom-right, bottom-left; only the starting phase is unknown, and rotating
+ * the cycle to begin at the corner nearest the origin fixes that.
+ *
+ * Which corner deserves to be called "top-left" on a diamond is genuinely
+ * ambiguous. The requirement is not to resolve that but to be deterministic
+ * and to agree with `order_corners` in page-processor/app/rectify.py, since
+ * one orders the pixels and the other orders the coordinates projected onto
+ * them. The two must stay identical.
+ */
 export function orderPageCorners(corners: PageCorners): PageCorners {
-  const sums = corners.map((point) => point.x + point.y);
-  const differences = corners.map((point) => point.x - point.y);
-  const at = (index: number) => corners[index] ?? corners[0];
+  const centre = corners.reduce(
+    (sum, point) => ({ x: sum.x + point.x / 4, y: sum.y + point.y / 4 }),
+    { x: 0, y: 0 },
+  );
+  const clockwise = [...corners].sort(
+    (a, b) =>
+      Math.atan2(a.y - centre.y, a.x - centre.x) -
+      Math.atan2(b.y - centre.y, b.x - centre.x),
+  );
 
-  return [
-    at(sums.indexOf(Math.min(...sums))),
-    at(differences.indexOf(Math.max(...differences))),
-    at(sums.indexOf(Math.max(...sums))),
-    at(differences.indexOf(Math.min(...differences))),
-  ] as PageCorners;
+  let start = 0;
+
+  for (let index = 1; index < 4; index += 1) {
+    if (isNearerOrigin(clockwise[index]!, clockwise[start]!)) start = index;
+  }
+
+  return [0, 1, 2, 3].map(
+    (offset) => clockwise[(start + offset) % 4]!,
+  ) as PageCorners;
+}
+
+/**
+ * Which of two corners is the better top-left. `x + y` decides it; the
+ * remaining comparisons exist only so that a tie resolves the same way here
+ * and in Python rather than by whichever order the points arrived in.
+ */
+function isNearerOrigin(candidate: Point, best: Point): boolean {
+  const candidateSum = candidate.x + candidate.y;
+  const bestSum = best.x + best.y;
+
+  if (candidateSum !== bestSum) return candidateSum < bestSum;
+  if (candidate.x !== best.x) return candidate.x < best.x;
+
+  return candidate.y < best.y;
 }
 
 function findHomography(

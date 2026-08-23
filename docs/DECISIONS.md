@@ -2338,3 +2338,205 @@ with the retained source photograph available through a separate control.
 A scan-like appearance remains available as an optional CSS filter. It changes
 only what the reader sees, so turning it on or off cannot move a margin note or
 alter the image stored for later extraction.
+
+---
+
+## 0096 — The loose search branch gets its own indexed column
+
+**Problem.** 0089 added a punctuation-insensitive substring match so that a
+query like `he just was` finds a note reading `he just was.....`. That query is
+entirely stop words, so `websearch_to_tsquery` reduces it to an empty tsquery —
+Postgres even raises a notice saying so — and full-text search alone can never
+match it. The substring branch is what makes such a query work at all.
+
+It was written to normalize the text inline:
+
+```sql
+regexp_replace(lower(concat_ws(' ', user_comment, extracted_passage,
+                               extracted_context)), '[^[:alnum:]]+', ' ', 'g')
+  LIKE '%he just was%'
+```
+
+`EXPLAIN ANALYZE` on the real query showed the cost:
+
+```
+Seq Scan on annotations a
+  Filter: ((user_id = ...) AND ((search_vector @@ ''::tsquery) OR (regexp_replace(...) ~~ '%he just was%')))
+```
+
+A leading-wildcard `LIKE` over a computed expression cannot use an index, and
+`OR`-ing it with the tsvector match meant the planner abandoned
+`annotations_search_vector_idx` for the whole query and normalized every row on
+every search. The GIN index that 0089's feature was built beside was doing
+nothing.
+
+**Options.** (a) Leave it: the app is personal and the table is small.
+(b) An expression index matching the inline SQL exactly. (c) A stored generated
+column holding the normalized text, with a trigram index on it.
+
+**Decision.** (c).
+
+(b) is not available. `concat_ws` is STABLE rather than IMMUTABLE, which
+Postgres rejects in both index expressions and generated columns — confirmed
+against the live database before choosing. The column therefore uses `coalesce`
+and `||`, which are immutable, and produces byte-identical output to the old
+expression on every existing row.
+
+(a) was rejected because the tsvector design is a stated claim of this project.
+A search that quietly sequentially scans is a worse answer to "how does this
+scale" than a search that never claimed an index in the first place.
+
+**Why generated.** The same reason `search_vector` is generated (0031's spirit,
+stated at the column): a derived column maintained by application code is a
+column that goes stale the first time a row is written from anywhere else.
+
+**What this buys, precisely.** Per-row normalization is gone from the query
+path — the filter now reads a stored column. The trigram index makes the loose
+branch indexable, so both sides of the `OR` can be served by an index instead
+of one side forcing a scan. At the current six rows the planner still picks the
+`user_id` index and filters, which is correct: the table is a single page and
+an index scan would be slower. The index earns its keep when one user's
+annotations outgrow that, which is exactly when it matters.
+
+**The limit, stated.** A trigram index only helps when the pattern holds at
+least three consecutive literal characters. Queries shorter than that still
+scan. This is accepted rather than worked around.
+
+**Cost.** Roughly one extra stored copy of each annotation's text, and 64 kB of
+index today.
+
+---
+
+## 0097 — Re-projected rectangles grow, and it compounds
+
+Recorded against 0094, which describes the projection but not its error term.
+
+`remapRectBetweenPageCrops` projects a rectangle's four corners through the
+source photograph into the new page, then stores the axis-aligned bounding box
+of the result. Under any rotation or perspective change that bounding box is
+strictly larger than the true projected quadrilateral, and because the inflated
+rectangle becomes the input to the next re-projection, the error accumulates.
+
+Measured with a realistic held-book quad and small corner nudges:
+
+```
+start          area 0.01200
+after edit 1   +0.7%
+after edit 3   +2.0%
+after edit 6   +3.4%
+```
+
+The growth is monotonic — a rectangle never shrinks back. A reader who adjusts
+corners once or twice will not see it; one who fiddles repeatedly will watch
+highlights creep outward.
+
+**Why it is not being fixed.** Storing the annotation as a quadrilateral rather
+than a rectangle would make the projection exact, but it changes the schema,
+the check constraints that guarantee normalized coordinates, and the SVG
+overlay's contract that a stored rectangle *is* the coordinate system (0031).
+That is a large change to remove a sub-percent error in a personal tool. It is
+written down instead, so the next person to touch this knows the error term
+exists and is cumulative rather than discovering it from a drifting highlight.
+
+**A related sharp edge, since fixed.** `orderPageCorners` picked corners by
+extremes of `x + y` and `x - y`. On a diamond-shaped quadrilateral two corners
+tie, the same point was chosen twice, and the homography went singular. It
+failed safe — the save was refused — but blamed the annotations for what was a
+corner-ordering fault. See 0099.
+
+---
+
+## 0098 — Ownership checks compare strings, they do not build patterns
+
+**Problem.** `isStorageKeyOwnedBy` is the check that stops a browser claiming
+somebody else's object during the two-step upload (0027). It built its matcher
+by interpolating the ids into a regular expression:
+
+```ts
+new RegExp(`^${userId}/${bookId}/[0-9a-f-]{36}\.(jpg|png|webp)$`)
+```
+
+Two faults. `\.` inside a template literal is not an escape sequence — it
+collapses to a bare `.` — so the separator before the extension matched any
+character, and a key ending `...333333Xjpg` was accepted. And interpolating a
+value into a pattern makes whatever metacharacters it contains part of the
+matcher. Both ids are database UUIDs today, so neither fault was reachable in
+practice.
+
+**Decision.** Compare the prefix with `startsWith` and test the remaining
+filename against a fixed pattern that never sees an interpolated value.
+
+**Why.** The prefix comparison is the security-relevant half, and a string
+comparison cannot be wrong about a metacharacter it never interprets. The
+filename pattern is now a literal in the module, so it is reviewable on its own
+rather than assembled at call time. The new pattern also requires the full UUID
+layout that `buildStorageKey` actually emits, rather than any 36 characters
+drawn from `[0-9a-f-]`.
+
+**Tested.** `pages.storage-key.test.ts` pins the false-accept cases: another
+user's key, the right user under another book, a traversal segment, a nested
+path, a foreign key that merely contains the prefix, the missing-dot case
+above, and extensions the app never issues. Derived keys are rejected too —
+only the raw upload key is ever claimed by a browser.
+
+---
+
+## 0099 — Corners are ordered by angle, in both languages at once
+
+**Problem.** Corner ordering is done twice: `order_corners` in
+`page-processor/app/rectify.py` orders the pixels that get warped, and
+`orderPageCorners` in `src/features/pages/pages.projection.ts` orders the
+coordinates of annotations projected onto the result. Both used the same
+heuristic — smallest `x + y` is top-left, largest is bottom-right, `x - y`
+separates the other two — and both were wrong in the same way.
+
+On a diamond, two corners tie on both tests. `indexOf` and `argmin` each return
+the first match, so one corner appeared twice and another was dropped. The
+resulting homography is singular, so a corner save was refused with
+"annotations cannot be remapped", which named the wrong cause.
+
+**Options.** (a) Special-case ties. (b) Fix the TypeScript side only, since
+that is where the visible refusal came from. (c) Replace the heuristic with one
+that cannot duplicate a point, in both languages together.
+
+**Decision.** (c).
+
+(b) is worse than the bug. The two functions must agree: one orders the image,
+the other orders the notes drawn on it. Making TypeScript robust while Python
+stayed naive would replace a refused save with a successful save whose
+annotations sit somewhere the reader never put them — a silent wrong answer in
+place of a loud wrong message.
+
+**How.** Sort the corners by angle around their centroid. That is a permutation
+of the input, so it cannot duplicate or drop a point. Angles increase clockwise
+in image coordinates, where y grows downward, so ascending order already walks
+top-left, top-right, bottom-right, bottom-left; only the starting phase is
+unknown, and the cycle is rotated to begin at the corner nearest the origin.
+
+Which corner deserves the name "top-left" on a diamond is genuinely ambiguous,
+and this does not pretend to resolve it. The tie-breaks — `x + y`, then `x`,
+then `y` — exist so the ambiguity resolves identically in both languages rather
+than by whichever order the points happened to arrive in.
+
+**Verified.** 504 quadrilaterals — jittered rectangles of the shape a real
+photograph produces, the same quad with its corners shuffled, a diamond in two
+input orders, a rotated square and a trapezoid — run through both
+implementations:
+
+```
+old produced duplicates:  2      (both diamonds)
+new produced duplicates:  0
+orderings that differ:    2      (the same two diamonds)
+TS/Python disagreements:  0
+```
+
+The second line is the fix. The third is what makes it safe to apply to
+existing data: every already-saved `page_corners` value that is not a diamond
+orders exactly as it did before, so no stored page is reinterpreted and no
+backfill is needed. The fourth is what keeps the notes on the page.
+
+Both suites cover it now — `pages.projection.test.ts` for the duplicate,
+the order-independence and the previously refused remap, and
+`test_rectify.py` for the same three plus a table of orderings copied from the
+TypeScript output, so a future change to one implementation fails against the
+other rather than drifting quietly.

@@ -134,6 +134,30 @@ export const annotations = pgTable(
       sql`setweight(to_tsvector('english', coalesce(user_comment, '')), 'A') || setweight(to_tsvector('english', coalesce(extracted_passage, '')), 'B') || setweight(to_tsvector('english', coalesce(extracted_context, '')), 'C')`,
     ),
 
+    /**
+     * The same three fields as `search_vector`, lowercased and with every run
+     * of non-alphanumeric characters flattened to a single space.
+     *
+     * This exists because full-text search cannot answer every query. A phrase
+     * made entirely of stop words — "he just was" — reduces to an empty
+     * tsquery and matches nothing, so search also runs a substring match. That
+     * substring match used to normalize the text inline in the query, which
+     * meant Postgres had to compute it for every row: a sequential scan that
+     * discarded the GIN index above, because a leading-wildcard LIKE over a
+     * computed expression cannot be indexed.
+     *
+     * Storing the normalized text makes it indexable. It cannot be an
+     * expression index instead: `concat_ws` is STABLE rather than IMMUTABLE,
+     * so Postgres rejects it in both index expressions and generated columns.
+     * Hence `coalesce` and `||`, which are immutable.
+     *
+     * Generated, for the same reason `search_vector` is — application code
+     * that maintains a derived column is code that eventually forgets to.
+     */
+    searchText: text("search_text").generatedAlwaysAs(
+      sql`regexp_replace(lower(coalesce(user_comment, '') || ' ' || coalesce(extracted_passage, '') || ' ' || coalesce(extracted_context, '')), '[^[:alnum:]]+', ' ', 'g')`,
+    ),
+
     ...timestamps,
   },
   (table) => [
@@ -145,6 +169,15 @@ export const annotations = pgTable(
     // word" fast. Built now rather than in phase 8 so the column and its index
     // arrive in the same migration.
     index("annotations_search_vector_idx").using("gin", table.searchVector),
+
+    // A trigram GIN index is what makes `search_text LIKE '%...%'` indexable.
+    // It only helps when the pattern contains at least three consecutive
+    // literal characters — shorter queries still scan — which is the accepted
+    // limit of this approach.
+    index("annotations_search_text_trgm_idx").using(
+      "gin",
+      sql`${table.searchText} gin_trgm_ops`,
+    ),
 
     // Coordinates are the one thing in this schema that a bug elsewhere could
     // corrupt silently — a pixel value stored by mistake looks like a valid
