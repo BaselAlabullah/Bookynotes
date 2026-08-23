@@ -12,6 +12,7 @@ Run from the page-processor directory:
 
 from __future__ import annotations
 
+import os
 import sys
 
 import cv2
@@ -23,6 +24,17 @@ from app.rectify import (
     order_corners,
     rectify,
     rectify_with_corners,
+)
+
+os.environ.setdefault("PAGE_PROCESSOR_SECRET", "test-secret-for-boundary")
+os.environ.setdefault("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co")
+os.environ.setdefault("SUPABASE_SECRET_KEY", "sb_secret_test")
+os.environ.setdefault("SUPABASE_STORAGE_BUCKET", "page-images")
+
+from app.storage_rectify import (  # noqa: E402
+    ProcessorHTTPError,
+    StorageObjectNotFound,
+    rectify_storage_object,
 )
 
 PAGE_WIDTH = 1200
@@ -275,6 +287,108 @@ def test_order_corners_matches_the_typescript_ordering() -> None:
             order_corners(np.array(quad, dtype="float32")),
             np.array(want, dtype="float32"),
         )
+
+
+VALID_SOURCE_KEY = (
+    "11111111-1111-1111-1111-111111111111/"
+    "22222222-2222-2222-2222-222222222222/"
+    "33333333-3333-3333-3333-333333333333.jpg"
+)
+VALID_DESTINATION_KEY = (
+    "11111111-1111-1111-1111-111111111111/"
+    "22222222-2222-2222-2222-222222222222/"
+    "33333333-3333-3333-3333-333333333333.flat.jpg"
+)
+
+
+class FakeStorage:
+    def __init__(self, payload: bytes | None = None, missing: bool = False) -> None:
+        self.payload = payload or _jpeg_bytes(build_flat_page())
+        self.missing = missing
+        self.downloaded: list[str] = []
+        self.uploaded: list[tuple[str, bytes]] = []
+
+    def download(self, storage_key: str) -> bytes:
+        self.downloaded.append(storage_key)
+
+        if self.missing:
+            raise StorageObjectNotFound(storage_key)
+
+        return self.payload
+
+    def upload_jpeg(self, storage_key: str, payload: bytes) -> None:
+        self.uploaded.append((storage_key, payload))
+
+
+def _jpeg_bytes(image: np.ndarray) -> bytes:
+    encoded, buffer = cv2.imencode(".jpg", image)
+
+    assert encoded
+
+    return buffer.tobytes()
+
+
+def test_storage_contract_rejects_forbidden_keys_before_reading() -> None:
+    storage = FakeStorage()
+
+    try:
+        rectify_storage_object(
+            {
+                "sourceKey": "../not-a-page.jpg",
+                "destinationKey": VALID_DESTINATION_KEY,
+                "corners": None,
+            },
+            storage,
+        )
+    except ProcessorHTTPError as error:
+        assert error.status_code == 403
+        assert storage.downloaded == []
+        assert storage.uploaded == []
+        return
+
+    raise AssertionError("forbidden storage key should have been refused")
+
+
+def test_storage_contract_reports_missing_source_object() -> None:
+    storage = FakeStorage(missing=True)
+
+    try:
+        rectify_storage_object(
+            {
+                "sourceKey": VALID_SOURCE_KEY,
+                "destinationKey": VALID_DESTINATION_KEY,
+                "corners": None,
+            },
+            storage,
+        )
+    except ProcessorHTTPError as error:
+        assert error.status_code == 404
+        assert storage.downloaded == [VALID_SOURCE_KEY]
+        assert storage.uploaded == []
+        return
+
+    raise AssertionError("missing source object should have been reported")
+
+
+def test_storage_contract_rejects_malformed_corners_before_reading() -> None:
+    storage = FakeStorage()
+
+    try:
+        rectify_storage_object(
+            {
+                "sourceKey": VALID_SOURCE_KEY,
+                "destinationKey": VALID_DESTINATION_KEY,
+                "corners": {"x": 0.1, "y": 0.2},
+            },
+            storage,
+        )
+    except ProcessorHTTPError as error:
+        assert error.status_code == 400
+        assert storage.downloaded == []
+        assert storage.uploaded == []
+        return
+
+    raise AssertionError("malformed corners should have been refused")
 
 
 def main() -> int:

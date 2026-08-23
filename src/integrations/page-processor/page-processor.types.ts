@@ -1,26 +1,26 @@
 /**
  * The contract with the page-processor service.
  *
- * A photograph goes out, and a flattened page with its natural colours comes
- * back. The service holds no user data and makes no authorization decisions —
- * ownership
- * is established before anything reaches it — which is what makes it safe to
- * run somewhere other than production.
+ * Source and destination storage keys go out, and rectified-page metadata comes
+ * back. The service holds no user data and makes no authorization decisions:
+ * ownership is established before anything reaches it.
  */
 
 export type RectifiedPage = {
-  /** The processed image, always JPEG. */
-  image: Buffer;
-  /** True when a page outline was found; false when the original came back. */
+  /** True when a page outline was found; false when the original was re-encoded. */
   rectified: boolean;
   /** 0.0 to 1.0. Zero means nothing was detected and nothing was changed. */
   confidence: number;
   /**
-   * Dimensions of the returned image, reported by the service so the caller
+   * Dimensions of the written image, reported by the service so the caller
    * does not have to decode it to find out.
    */
   width: number;
   height: number;
+  /** Page corners in the source image, clockwise from top-left, when known. */
+  corners: number[][] | null;
+  /** Whether corners were supplied or detected automatically. */
+  source: "manual" | "detected";
 };
 
 export class PageProcessorError extends Error {

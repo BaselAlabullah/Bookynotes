@@ -9,13 +9,15 @@ page-processor.client.ts   rectifyPage(), isPageProcessorConfigured()
 ```
 
 **This is the only optional integration in the app.** `PAGE_PROCESSOR_URL` may be
-unset — on the deployed instance it usually is, because the service runs on a
-laptop — and then `rectifyPage` returns null and the upload proceeds with the
-photograph exactly as it arrived.
+unset, and then `rectifyPage` returns null and the upload proceeds with the
+photograph exactly as it arrived. Locally it usually points at
+`http://127.0.0.1:8000`; in production it can point at this Vercel project's
+`/api` base so `rectifyPage` reaches the Python function at `/api/rectify`.
 
-Every failure returns null rather than throwing: not configured, unreachable,
-timed out, refused the image, or looked and found no page. Only the caller knows
-whether any of that is worth mentioning, and in this case none of it is.
+Every processor failure returns null rather than throwing: not configured,
+unreachable, timed out, or refused the image. A successful response contains
+metadata only; the Python service has already written the derived JPEG to the
+destination storage key.
 
 The initial work happens in `pages.service.ts` at upload time, before the
 `pages` row exists. Saved corners can later be adjusted through the same client;

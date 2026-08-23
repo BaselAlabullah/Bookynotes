@@ -2540,3 +2540,44 @@ the order-independence and the previously refused remap, and
 `test_rectify.py` for the same three plus a table of orderings copied from the
 TypeScript output, so a future change to one implementation fails against the
 other rather than drifting quietly.
+
+---
+
+## 0100 — Page rectification runs as a Vercel Python function
+
+**Problem.** Page rectification lived only in the local FastAPI service, so the
+deployed app stored raw photographs and could not apply manual corner edits.
+Moving the OpenCV work into production had two traps: Vercel Functions reject
+large request/response bodies at 4.5 MB, and `rectify.py` already had a matching
+TypeScript corner-ordering function that must not drift again.
+
+**Options.** (a) Hugging Face Spaces. (b) A separate Vercel project for the
+Python service. (c) A top-level Vercel Python function in this same project,
+called through `PAGE_PROCESSOR_URL`. For sharing the algorithm: copy
+`rectify.py`, rely on ad hoc sibling paths, or package `page-processor` and
+install that package from the repo root.
+
+**Decision.** Use (c). The processor contract now sends storage keys, not image
+bytes: the Python service reads `sourceKey` from Supabase Storage, writes the
+JPEG result to `destinationKey`, and returns JSON metadata. The Vercel function
+is `api/rectify.py`, with explicit `maxDuration`, and production points
+`PAGE_PROCESSOR_URL` at the app's `/api` base.
+
+The sharing mechanism is a local Python package. Root `requirements.txt`
+installs `./page-processor`, so the Vercel function imports the same
+`page-processor/app/rectify.py` module that local FastAPI imports. There is no
+copied algorithm file.
+
+**Why.** Hugging Face Spaces is out because Docker and Gradio Spaces require a
+paid plan for personal accounts, which breaks the zero-cost constraint. Sending
+bytes is out because real uploads can be larger than Vercel's 4.5 MB function
+body cap even though the stored images seen so far are usually smaller.
+
+Keeping the Python function inside the same Vercel project avoids a second free
+deployment that has to be kept in sync with every web deploy, and Phase 0 proved
+that top-level `api/*.py` can coexist with the App Router `src/app/api/*` routes
+and run OpenCV in `hnd1`. What we lose is independent scaling and rollback for
+the rectifier: a bad deploy can affect both the web app and the processor, and
+the Python dependencies now contribute to the same project build. That is
+acceptable for this app because the processor remains optional and the upload
+path still degrades to the original photograph.

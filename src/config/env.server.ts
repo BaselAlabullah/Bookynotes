@@ -83,9 +83,12 @@ const serverEnvSchema = z.object({
   /**
    * The page-processor service, if one is running.
    *
-   * The only optional integration in the app. Unset — which it usually is on
-   * the deployed instance, because the service runs locally — page photographs
-   * are stored exactly as uploaded and nothing else behaves differently.
+   * For local FastAPI use http://127.0.0.1:8000. For the Vercel Python
+   * function in this same project, use this deployment's /api base, for example
+   * https://<app>.vercel.app/api.
+   *
+   * Unset means page photographs are stored exactly as uploaded and nothing
+   * else behaves differently.
    */
   PAGE_PROCESSOR_URL: z.url().optional(),
   PAGE_PROCESSOR_SECRET: z.string().min(16).optional(),

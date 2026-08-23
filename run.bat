@@ -62,21 +62,50 @@ call :stop_port 3000 "web"
 call :stop_port 8000 "page-processor"
 
 REM ---------------------------------------------------------------------------
-REM  The page-processor's secret, read from .env.local so there is one copy of
-REM  it rather than two that can drift apart.
+REM  The page-processor's environment, read from .env.local so there is one copy
+REM  rather than two that can drift apart.
 REM ---------------------------------------------------------------------------
 
-set "PAGE_SECRET="
-for /f "usebackq tokens=1,* delims==" %%a in (`findstr /b /c:"PAGE_PROCESSOR_SECRET=" ".env.local"`) do (
-    set "PAGE_SECRET=%%b"
+set "PAGE_PROCESSOR_SECRET="
+set "NEXT_PUBLIC_SUPABASE_URL="
+set "SUPABASE_SECRET_KEY="
+set "SUPABASE_STORAGE_BUCKET="
+
+for /f "usebackq tokens=1,* delims==" %%a in (".env.local") do (
+    set "ENV_KEY=%%a"
+    set "ENV_VALUE=%%b"
+    set "ENV_KEY=!ENV_KEY: =!"
+
+    if /i "!ENV_KEY!"=="PAGE_PROCESSOR_SECRET" set "PAGE_PROCESSOR_SECRET=!ENV_VALUE!"
+    if /i "!ENV_KEY!"=="NEXT_PUBLIC_SUPABASE_URL" set "NEXT_PUBLIC_SUPABASE_URL=!ENV_VALUE!"
+    if /i "!ENV_KEY!"=="SUPABASE_SECRET_KEY" set "SUPABASE_SECRET_KEY=!ENV_VALUE!"
+    if /i "!ENV_KEY!"=="SUPABASE_STORAGE_BUCKET" set "SUPABASE_STORAGE_BUCKET=!ENV_VALUE!"
 )
 
 set "PYTHON=page-processor\.venv\Scripts\python.exe"
 
-if not defined PAGE_SECRET (
+if not defined PAGE_PROCESSOR_SECRET (
     echo   [!] PAGE_PROCESSOR_SECRET is not set in .env.local.
     echo       Starting without the page-processor. Uploads will be stored
     echo       exactly as they arrive.
+    goto :start_web
+)
+
+if not defined NEXT_PUBLIC_SUPABASE_URL (
+    echo   [!] NEXT_PUBLIC_SUPABASE_URL is not set in .env.local.
+    echo       Starting without the page-processor.
+    goto :start_web
+)
+
+if not defined SUPABASE_SECRET_KEY (
+    echo   [!] SUPABASE_SECRET_KEY is not set in .env.local.
+    echo       Starting without the page-processor.
+    goto :start_web
+)
+
+if not defined SUPABASE_STORAGE_BUCKET (
+    echo   [!] SUPABASE_STORAGE_BUCKET is not set in .env.local.
+    echo       Starting without the page-processor.
     goto :start_web
 )
 
@@ -101,7 +130,7 @@ if not exist "%PYTHON%" (
 echo   [^>] page-processor  http://127.0.0.1:8000
 REM  --app-dir puts page-processor on Python's path, so this needs no "cd" and
 REM  therefore no quotes inside quotes - which batch handles badly.
-start "Bookynotes page-processor" cmd /k "set PAGE_PROCESSOR_SECRET=%PAGE_SECRET%&& page-processor\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir page-processor --host 127.0.0.1 --port 8000"
+start "Bookynotes page-processor" cmd /k "page-processor\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir page-processor --host 127.0.0.1 --port 8000"
 
 REM Give uvicorn a moment to bind, so the first upload does not race it.
 REM

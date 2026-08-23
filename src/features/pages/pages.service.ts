@@ -232,26 +232,33 @@ async function tryRectify(
   }
 
   try {
-    const result = await rectifyPage(uploaded, "image/jpeg", corners);
+    const flattenedKey = flattenedKeyFor(storageKey);
+    const result = await rectifyPage(storageKey, flattenedKey, corners);
 
     // Null means unreachable or refused. `rectified: false` means it looked and
     // found no page, so there is no derived geometry worth a second object and
     // a second key.
     if (!result || !result.rectified) {
+      await removeObject(flattenedKey).catch(() => undefined);
       return untouched;
     }
 
-    const flattenedKey = flattenedKeyFor(storageKey);
-    await uploadObject(flattenedKey, result.image, "image/jpeg");
+    const flattened = await tryReadObject(flattenedKey);
+
+    if (!flattened) {
+      await removeObject(flattenedKey).catch(() => undefined);
+      return untouched;
+    }
 
     return {
-      bytes: result.image,
+      bytes: flattened,
       storageKey: flattenedKey,
       originalStorageKey: storageKey,
       width: result.width,
       height: result.height,
     };
   } catch {
+    await removeObject(flattenedKeyFor(storageKey)).catch(() => undefined);
     return untouched;
   }
 }
@@ -306,9 +313,9 @@ export async function updatePageCorners(
   if (!isPageProcessorConfigured()) return { status: "processor-unavailable" };
 
   const sourceStorageKey = page.originalStorageKey ?? page.storageKey;
-  const source = await tryReadObject(sourceStorageKey);
+  const sourceExists = await objectExists(sourceStorageKey).catch(() => false);
 
-  if (!source) return { status: "source-unreadable" };
+  if (!sourceExists) return { status: "source-unreadable" };
 
   const regionAnnotations = (await listAnnotationsForPage(userId, page.id)).filter(
     isRegionAnnotation,
@@ -340,17 +347,29 @@ export async function updatePageCorners(
     return { status: "annotations-cannot-be-remapped" };
   }
 
-  const processed = await rectifyPage(source, "image/jpeg", input.corners);
-
-  if (!processed?.rectified) return { status: "processing-failed" };
-
   const newStorageKey = revisedFlattenedKeyFor(sourceStorageKey);
+  const processed = await rectifyPage(
+    sourceStorageKey,
+    newStorageKey,
+    input.corners,
+  );
+
+  if (!processed?.rectified) {
+    await removeObject(newStorageKey).catch(() => undefined);
+    return { status: "processing-failed" };
+  }
+
   const newThumbnailKey = thumbnailKeyFor(newStorageKey);
   let thumbnailStored = false;
 
   try {
-    await uploadObject(newStorageKey, processed.image, "image/jpeg");
-    const thumbnail = await buildThumbnail(processed.image);
+    const processedBytes = await tryReadObject(newStorageKey);
+
+    if (!processedBytes) {
+      throw new Error("Processed image was not written.");
+    }
+
+    const thumbnail = await buildThumbnail(processedBytes);
     await uploadObject(newThumbnailKey, thumbnail, "image/jpeg");
     thumbnailStored = true;
   } catch {

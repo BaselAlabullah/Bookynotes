@@ -20,21 +20,28 @@ tests/
 ## What it does
 
 ```
-POST /rectify        multipart file, header X-API-Key
-                     optional field: corners, four [x, y] pairs in 0..1
-  ->  image/jpeg, plus:
-      X-Rectified   true when a page outline was found
-      X-Confidence  0.0-1.0; 0.0 means the original came back untouched
-      X-Corners     the detected corners in the input image
-      X-Source      "manual" when corners were supplied, else "detected"
-      X-Width       dimensions of the returned image, so the caller need not
-      X-Height      decode it to learn them
+POST /rectify        JSON, header X-API-Key
+  {
+    "sourceKey": "<user>/<book>/<uuid>.jpg",
+    "destinationKey": "<user>/<book>/<uuid>.flat.jpg",
+    "corners": [[x, y], [x, y], [x, y], [x, y]] | null
+  }
+  -> {
+    "rectified": true,
+    "confidence": 1.0,
+    "width": 1200,
+    "height": 1700,
+    "corners": [[x, y], ...] | null,
+    "source": "manual" | "detected"
+  }
 
 GET  /health         liveness, no key required
 ```
 
-The metadata is in headers rather than a JSON wrapper because base64 would
-inflate a multi-megabyte photograph by a third to say four things.
+The service reads `sourceKey` from the private Supabase Storage bucket and
+uploads the JPEG result to `destinationKey`. The app never sends image bytes to
+the processor or receives image bytes back from it, which keeps the contract
+inside Vercel's function body limits.
 
 ## Corners beat detection
 
@@ -88,10 +95,13 @@ python -m venv .venv
 # .venv/bin/pip install -r requirements.txt                   # macOS / Linux
 
 PAGE_PROCESSOR_SECRET=<same value as the Next app> \
+NEXT_PUBLIC_SUPABASE_URL=<project URL> \
+SUPABASE_SECRET_KEY=<service-role key> \
+SUPABASE_STORAGE_BUCKET=page-images \
   .venv/Scripts/python.exe -m uvicorn app.main:app --port 8000
 ```
 
-Then set both variables in the Next app's `.env.local`:
+Then set the processor variables in the Next app's `.env.local`:
 
 ```
 PAGE_PROCESSOR_URL=http://127.0.0.1:8000
@@ -103,9 +113,9 @@ because a URL without a secret means posting images to an unauthenticated
 endpoint.
 
 **Leave both unset and nothing breaks.** Page photographs are then stored exactly
-as uploaded. That is how the deployed instance runs, and it is the point: a
-feature that only works when an extra process happens to be running has to
-degrade to "the app as it was", or it is not optional at all.
+as uploaded. That graceful degradation is still the point: a feature that only
+works when an extra process happens to be running has to degrade to "the app as
+it was", or it is not optional at all.
 
 ## Tests
 
@@ -121,11 +131,12 @@ the original — rather than "it looks better".
 
 ## The secret is not authorization
 
-This service takes an image and returns an image. It holds no user data, has no
-database, and decides nothing about who may see what — the Next app establishes
-ownership long before it calls here. The key exists so that a process listening
-on a port cannot be used as free image processing by anything else that can
-reach it.
+This service takes storage keys and returns metadata. It holds no database and
+decides nothing about who may see what: the Next app establishes ownership long
+before it calls here. The key exists so that a public function or a process
+listening on a port cannot be used as free image processing by anything else
+that can reach it.
 
-That narrowness is what makes running this on a laptop, while the rest of the
-app is deployed, a reasonable thing to do rather than a hole.
+The service validates that the destination key is derived from the source key
+before it reads or writes storage. That is not user authorization; it is a guard
+against turning the processor secret into a general bucket editor.

@@ -2,3 +2,4 @@ fastapi==0.128.5
 uvicorn[standard]==0.42.0
 opencv-python-headless==4.13.0.92
 numpy==2.3.4
+./page-processor
