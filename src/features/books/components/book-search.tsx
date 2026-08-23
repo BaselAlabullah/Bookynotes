@@ -130,12 +130,6 @@ export function BookSearch() {
         </p>
       ) : null}
 
-      {addState.addedTitle ? (
-        <p role="status" className="border-l-2 border-accent pl-3 text-sm text-accent">
-          Added “{addState.addedTitle}” to your library.
-        </p>
-      ) : null}
-
       <ul className="flex flex-col gap-4">
         {visibleResults.map((result) => (
           <li

@@ -73,8 +73,9 @@ export async function addBookAction(
 
   // The library list is a different route, so it has its own cache entry.
   revalidatePath("/library");
+  revalidatePath(`/books/${book.id}`);
 
-  return { error: null, addedTitle: parsed.data.title };
+  redirect(`/books/${book.id}`);
 }
 
 export async function deleteBookAction(formData: FormData): Promise<void> {
