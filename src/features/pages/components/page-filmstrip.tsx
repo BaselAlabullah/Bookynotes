@@ -46,7 +46,7 @@ export function PageFilmstrip({
                 ) : (
                   <span className="h-12 w-11 self-center border border-rule bg-paper-deep" />
                 )}
-                <span className={`text-center text-[10px] tabular-nums ${isCurrent ? "text-accent" : "text-ink-muted"}`}>{page.pageNumber}</span>
+                <span className={`text-center text-xs tabular-nums ${isCurrent ? "text-accent" : "text-ink-muted"}`}>{page.pageNumber}</span>
               </Link>
             </li>
           );

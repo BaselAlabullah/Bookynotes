@@ -68,7 +68,7 @@ export function PageGrid({ bookId, pages, previewUrls, pageStats }: PageGridProp
               <span className="font-serif text-sm tabular-nums text-ink-muted group-hover:text-accent">
                 Page {page.pageNumber}
               </span>
-              <span className="flex flex-wrap gap-1.5 text-[11px] text-ink-muted">
+              <span className="flex flex-wrap gap-1.5 text-xs text-ink-muted">
                 <PageBadge>{stats.annotationCount} {stats.annotationCount === 1 ? "note" : "notes"}</PageBadge>
                 {needsTranscript ? (
                   <PageBadge tone="warning">No transcript</PageBadge>

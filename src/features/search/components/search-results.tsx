@@ -39,7 +39,7 @@ export function SearchResults({
                   >
                     Page {page.pageNumber}
                   </Link>
-                  <span className="text-[11px] uppercase tracking-[0.1em] text-ink-muted">
+                  <span className="text-xs uppercase tracking-[0.1em] text-ink-muted">
                     {page.results.length}{" "}
                     {page.results.length === 1 ? "note" : "notes"}
                   </span>
@@ -128,7 +128,7 @@ function SnippetBlock({
 }) {
   return (
     <span className="grid gap-1 sm:grid-cols-[6.5rem_1fr] sm:gap-4">
-      <span className="text-[11px] uppercase tracking-[0.1em] text-ink-muted">
+      <span className="text-xs uppercase tracking-[0.1em] text-ink-muted">
         {label}
       </span>
       <span
@@ -153,7 +153,7 @@ function SearchBadge({
 }) {
   return (
     <span
-      className={`border px-1.5 py-0.5 text-[11px] uppercase tracking-[0.08em] ${
+      className={`border px-1.5 py-0.5 text-xs uppercase tracking-[0.08em] ${
         tone === "danger"
           ? "border-danger/40 text-danger"
           : "border-rule text-ink-muted"

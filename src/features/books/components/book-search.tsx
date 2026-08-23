@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 
+import { Skeleton } from "@/components/ui/skeleton";
 import { bookSearchResponseSchema } from "@/integrations/open-library/open-library.schema";
 import type { BookSearchResult } from "@/integrations/open-library/open-library.types";
 
@@ -103,7 +104,9 @@ export function BookSearch() {
   return (
     <div className="flex flex-col gap-6">
       <label className="flex flex-col gap-2">
-        <span className="text-xs uppercase tracking-[0.12em] text-ink-muted">Search Open Library</span>
+        <span className="text-xs uppercase tracking-[0.12em] text-ink-muted">
+          Search Open Library
+        </span>
         <input
           type="search"
           value={query}
@@ -113,10 +116,6 @@ export function BookSearch() {
           className="border-b border-rule bg-transparent px-1 py-3 text-lg outline-none focus:border-accent"
         />
       </label>
-
-      {isSearching ? (
-        <p className="text-sm text-ink-muted">Searching…</p>
-      ) : null}
 
       {visibleSearchError ? (
         <p role="alert" className="border-l-2 border-danger pl-3 text-sm text-danger">
@@ -130,57 +129,61 @@ export function BookSearch() {
         </p>
       ) : null}
 
-      <ul className="flex flex-col gap-4">
-        {visibleResults.map((result) => (
-          <li
-            key={result.openLibraryId}
-            className="flex items-start gap-4 border-b border-rule pb-5"
-          >
-            <BookCover url={result.coverUrl} title={result.title} />
+      {isSearching ? (
+        <BookSearchSkeleton />
+      ) : (
+        <ul className="flex flex-col gap-4">
+          {visibleResults.map((result) => (
+            <li
+              key={result.openLibraryId}
+              className="flex items-start gap-4 border-b border-rule pb-5"
+            >
+              <BookCover url={result.coverUrl} title={result.title} />
 
-            <div className="flex flex-1 flex-col gap-1">
-              <h2 className="font-serif text-lg">{result.title}</h2>
-              <p className="text-sm text-ink-muted">
-                {result.author ?? "Unknown author"}
-                {result.firstPublishYear ? ` · ${result.firstPublishYear}` : ""}
-              </p>
-              <p className="text-xs text-ink-muted">
-                {result.editionCount} edition
-                {result.editionCount === 1 ? "" : "s"}
-              </p>
-            </div>
+              <div className="flex flex-1 flex-col gap-1">
+                <h2 className="font-serif text-lg">{result.title}</h2>
+                <p className="text-sm text-ink-muted">
+                  {result.author ?? "Unknown author"}
+                  {result.firstPublishYear ? ` - ${result.firstPublishYear}` : ""}
+                </p>
+                <p className="text-xs text-ink-muted">
+                  {result.editionCount} edition
+                  {result.editionCount === 1 ? "" : "s"}
+                </p>
+              </div>
 
-            <form action={addAction}>
-              {/* Hidden inputs, which means this is user input on arrival no
-                  matter that we put it here. The Server Function re-validates
-                  every field. */}
-              <input type="hidden" name="title" value={result.title} />
-              <input
-                type="hidden"
-                name="author"
-                value={result.author ?? "Unknown author"}
-              />
-              <input
-                type="hidden"
-                name="coverUrl"
-                value={result.coverUrl ?? ""}
-              />
-              <input
-                type="hidden"
-                name="openLibraryId"
-                value={result.openLibraryId}
-              />
-              <button
-                type="submit"
-                disabled={isAdding}
-                className="border border-accent px-3 py-1.5 text-sm text-accent disabled:opacity-50"
-              >
-                Add
-              </button>
-            </form>
-          </li>
-        ))}
-      </ul>
+              <form action={addAction}>
+                {/* Hidden inputs, which means this is user input on arrival no
+                    matter that we put it here. The Server Function re-validates
+                    every field. */}
+                <input type="hidden" name="title" value={result.title} />
+                <input
+                  type="hidden"
+                  name="author"
+                  value={result.author ?? "Unknown author"}
+                />
+                <input
+                  type="hidden"
+                  name="coverUrl"
+                  value={result.coverUrl ?? ""}
+                />
+                <input
+                  type="hidden"
+                  name="openLibraryId"
+                  value={result.openLibraryId}
+                />
+                <button
+                  type="submit"
+                  disabled={isAdding}
+                  className="border border-accent px-3 py-1.5 text-sm text-accent disabled:opacity-50"
+                >
+                  Add
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {isQueryLongEnough &&
       !isSearching &&
@@ -188,6 +191,24 @@ export function BookSearch() {
       visibleResults.length === 0 ? (
         <p className="text-sm text-ink-muted">Nothing found for that.</p>
       ) : null}
+    </div>
+  );
+}
+
+function BookSearchSkeleton() {
+  return (
+    <div role="status" aria-label="Searching books" className="flex flex-col gap-4">
+      {[0, 1, 2].map((index) => (
+        <div key={index} className="flex items-start gap-4 border-b border-rule pb-5">
+          <Skeleton className="h-[138px] w-[92px] shrink-0" />
+          <div className="flex flex-1 flex-col gap-2 pt-1">
+            <Skeleton className="h-5 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+          <Skeleton className="h-9 w-14" />
+        </div>
+      ))}
     </div>
   );
 }

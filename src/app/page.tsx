@@ -82,7 +82,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <footer className="flex min-h-16 items-center justify-between gap-4 text-[10px] uppercase tracking-[0.14em] text-ink-muted">
+      <footer className="flex min-h-16 items-center justify-between gap-4 text-xs uppercase tracking-[0.14em] text-ink-muted">
         <span>Physical books, digital memory</span>
         <span>Built for attentive reading</span>
       </footer>

@@ -73,7 +73,7 @@ export function LibraryList({
                   ) : null}
                 </div>
 
-                <dl className="grid grid-cols-3 gap-2 text-[11px] uppercase tracking-[0.09em] text-ink-muted">
+                <dl className="grid grid-cols-3 gap-2 text-xs uppercase tracking-[0.09em] text-ink-muted">
                   <LibraryStat label="Pages" value={stats.pageCount} />
                   <LibraryStat label="Notes" value={stats.annotationCount} />
                   <LibraryStat

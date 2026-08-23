@@ -284,7 +284,7 @@ export function AnnotationCanvas({
           <span
             key={annotation.id}
             aria-hidden
-            className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+            className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full px-1.5 py-0.5 text-xs font-medium ${
               selectedId === annotation.id
                 ? "bg-accent text-paper"
                 : "bg-paper-raised text-accent ring-1 ring-accent"

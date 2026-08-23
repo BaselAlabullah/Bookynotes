@@ -116,7 +116,7 @@ export default async function PageView({
         </p>
       )}
 
-      <p className="screen-only text-[11px] text-ink-muted">
+      <p className="screen-only text-xs text-ink-muted">
         {page.imageWidth} × {page.imageHeight} pixels · marks stored as normalized coordinates
       </p>
     </main>

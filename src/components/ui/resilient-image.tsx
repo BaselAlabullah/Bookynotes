@@ -66,6 +66,7 @@ export const ResilientImage = forwardRef<HTMLImageElement, ResilientImageProps>(
   ) {
     const [attempt, setAttempt] = useState(0);
     const [activeSrc, setActiveSrc] = useState(src);
+    const [isLoaded, setIsLoaded] = useState(false);
     const imageRef = useRef<HTMLImageElement | null>(null);
     const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -104,6 +105,7 @@ export const ResilientImage = forwardRef<HTMLImageElement, ResilientImageProps>(
     useEffect(() => {
       setAttempt(0);
       setActiveSrc(src);
+      setIsLoaded(false);
     }, [src]);
 
     useEffect(() => {
@@ -129,10 +131,14 @@ export const ResilientImage = forwardRef<HTMLImageElement, ResilientImageProps>(
         ref={setImageRef}
         alt={alt}
         src={activeSrc}
+        className={`bg-ink/[0.055] transition-opacity ${
+          isLoaded ? "opacity-100" : "opacity-75"
+        } ${props.className ?? ""}`}
         onLoad={(event) => {
           if (retryTimer.current) clearTimeout(retryTimer.current);
           retryTimer.current = null;
           setAttempt(0);
+          setIsLoaded(true);
           onLoad?.(event);
         }}
         onError={(event) => {

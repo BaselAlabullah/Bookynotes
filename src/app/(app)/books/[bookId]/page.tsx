@@ -132,7 +132,7 @@ function BookMetric({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <dt className="text-[11px] uppercase tracking-[0.12em] text-ink-muted">{label}</dt>
+      <dt className="text-xs uppercase tracking-[0.12em] text-ink-muted">{label}</dt>
       <dd
         className={`font-serif text-2xl tabular-nums ${
           tone === "danger"

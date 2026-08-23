@@ -86,7 +86,7 @@ export default async function AppLayout({
                 placeholder="Search notes"
                 className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-ink-muted/75"
               />
-              <kbd className="hidden pl-2 text-[10px] text-ink-muted sm:block">
+              <kbd className="hidden pl-2 text-xs text-ink-muted sm:block">
                 /
               </kbd>
             </div>

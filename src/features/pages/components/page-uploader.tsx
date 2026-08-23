@@ -429,7 +429,7 @@ export function PageUploader({
             01
           </span>
           <div className="relative">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-accent">
+            <p className="text-xs uppercase tracking-[0.2em] text-accent">
               New leaf
             </p>
             <h2 className="mt-2 font-serif text-3xl leading-none">Add a page</h2>
@@ -624,7 +624,7 @@ function CaptureQualityPanel({ check }: { check: CaptureCheck }) {
 
         {check.status === "ready" ? (
           <span
-            className={`border px-2 py-1 text-[11px] uppercase tracking-[0.1em] ${
+            className={`border px-2 py-1 text-xs uppercase tracking-[0.1em] ${
               check.warnings.length === 0
                 ? "border-rule text-ink-muted"
                 : "border-accent/40 text-accent"
@@ -647,7 +647,7 @@ function CaptureQualityPanel({ check }: { check: CaptureCheck }) {
               {check.warnings.map((warning) => (
                 <span
                   key={warning}
-                  className="border border-accent/40 px-2 py-1 text-[11px] uppercase tracking-[0.08em] text-accent"
+                  className="border border-accent/40 px-2 py-1 text-xs uppercase tracking-[0.08em] text-accent"
                 >
                   {warning}
                 </span>

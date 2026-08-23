@@ -544,7 +544,7 @@ export function PageAnnotator({
               <section className="mb-5 border-y border-accent py-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-accent">New annotation</h3>
-                  <p className="font-mono text-[10px] text-ink-muted">x {formatPercent(draft.x)} · y {formatPercent(draft.y)} · w {formatPercent(draft.width)} · h {formatPercent(draft.height)}</p>
+                  <p className="font-mono text-xs text-ink-muted">x {formatPercent(draft.x)} · y {formatPercent(draft.y)} · w {formatPercent(draft.width)} · h {formatPercent(draft.height)}</p>
                 </div>
                 <textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="What do you want to remember?" rows={4} autoFocus className="mt-3 w-full resize-y border border-rule bg-paper-raised px-3 py-2 text-sm outline-none focus:border-accent" />
                 <div className="mt-3 flex gap-3">
@@ -570,7 +570,7 @@ export function PageAnnotator({
                       onFocus={() => setHighlightedId(annotation.id)}
                       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setHighlightedId(null); }}
                     >
-                      <span className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] ${isActive ? "bg-accent text-paper" : "border border-accent text-accent"}`}>{index + 1}</span>
+                      <span className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs ${isActive ? "bg-accent text-paper" : "border border-accent text-accent"}`}>{index + 1}</span>
                       <div className="min-w-0 flex-1">
                         {editingId === annotation.id ? (
                           <AnnotationEditForm
@@ -799,7 +799,7 @@ function OriginalPhotoAnnotationCanvas({
                 <span
                   key={annotation.id}
                   aria-hidden
-                  className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                  className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full px-1.5 py-0.5 text-xs font-medium ${
                     selectedId === annotation.id
                       ? "bg-accent text-paper"
                       : "bg-paper-raised text-accent ring-1 ring-accent"
@@ -1049,7 +1049,7 @@ function AnnotationReviewBlocks({ annotation }: { annotation: Annotation }) {
     <span className="mt-3 flex flex-col gap-3">
       {annotation.extractedPassage ? (
         <span className="flex flex-col gap-1">
-          <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-muted">
+          <span className="text-xs font-medium uppercase tracking-[0.12em] text-ink-muted">
             Read passage
           </span>
           <span className="font-serif text-[0.95rem] leading-6 text-ink-muted">
@@ -1060,7 +1060,7 @@ function AnnotationReviewBlocks({ annotation }: { annotation: Annotation }) {
 
       {annotation.extractedContext ? (
         <span className="flex flex-col gap-1">
-          <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-muted">
+          <span className="text-xs font-medium uppercase tracking-[0.12em] text-ink-muted">
             Context
           </span>
           <span className="text-xs leading-5 text-ink-muted">
