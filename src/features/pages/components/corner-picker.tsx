@@ -20,6 +20,8 @@ export const DEFAULT_CORNERS: Corners = [
 ];
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
 
 /**
  * Sort four points into top-left, top-right, bottom-right, bottom-left.
@@ -76,6 +78,7 @@ export function CornerPicker({
   onChange,
 }: CornerPickerProps) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const pointerFocusRef = useRef(false);
   const [dragging, setDragging] = useState<number | null>(null);
   const [focused, setFocused] = useState<number | null>(null);
   const [surfaceSize, setSurfaceSize] = useState<{
@@ -121,6 +124,16 @@ export function CornerPicker({
     activeIndex === null ? null : (corners[activeIndex] ?? null);
   const loupeZoom = 3;
   const loupeSize = 144;
+  const loupeGap = 14;
+  const loupePosition =
+    activeCorner && surfaceSize
+      ? positionLoupe({
+          corner: activeCorner,
+          surfaceSize,
+          size: loupeSize,
+          gap: loupeGap,
+        })
+      : null;
 
   return (
     <div className="flex flex-col gap-2">
@@ -171,10 +184,11 @@ export function CornerPicker({
             type="button"
             aria-label={`Page corner ${index + 1}`}
             onPointerDown={(event) => {
+              pointerFocusRef.current = true;
               event.currentTarget.setPointerCapture(event.pointerId);
               rememberSurfaceSize();
               setDragging(index);
-              setFocused(index);
+              setFocused(null);
             }}
             onPointerMove={(event) => {
               if (dragging !== index) return;
@@ -183,15 +197,24 @@ export function CornerPicker({
             }}
             onPointerUp={(event) => {
               event.currentTarget.releasePointerCapture(event.pointerId);
+              pointerFocusRef.current = false;
               setDragging(null);
+              setFocused(null);
+              event.currentTarget.blur();
             }}
-            onPointerCancel={() => setDragging(null)}
+            onPointerCancel={(event) => {
+              pointerFocusRef.current = false;
+              setDragging(null);
+              setFocused(null);
+              event.currentTarget.blur();
+            }}
             onFocus={() => {
+              if (pointerFocusRef.current) return;
               rememberSurfaceSize();
               setFocused(index);
             }}
             onBlur={() => {
-              if (dragging === null) setFocused(null);
+              setFocused(null);
             }}
             onKeyDown={(event) => {
               // Keyboard nudging, because a drag-only control is unusable
@@ -221,11 +244,16 @@ export function CornerPicker({
           />
         ))}
 
-        {activeCorner && surfaceSize ? (
+        {activeCorner && surfaceSize && loupePosition ? (
           <div
             aria-hidden
-            className="pointer-events-none absolute right-3 top-3 z-10 overflow-hidden border-2 border-paper bg-paper shadow-[0_4px_18px_rgba(0,0,0,0.35)]"
-            style={{ width: loupeSize, height: loupeSize }}
+            className="pointer-events-none absolute z-10 overflow-hidden border-2 border-paper bg-paper shadow-[0_4px_18px_rgba(0,0,0,0.35)]"
+            style={{
+              width: loupeSize,
+              height: loupeSize,
+              left: loupePosition.left,
+              top: loupePosition.top,
+            }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -252,4 +280,26 @@ export function CornerPicker({
       </p>
     </div>
   );
+}
+
+function positionLoupe({
+  corner,
+  surfaceSize,
+  size,
+  gap,
+}: {
+  corner: Point;
+  surfaceSize: { width: number; height: number };
+  size: number;
+  gap: number;
+}) {
+  const handleX = corner.x * surfaceSize.width;
+  const handleY = corner.y * surfaceSize.height;
+  const hasRoomRight = handleX + gap + size <= surfaceSize.width;
+  const preferredLeft = hasRoomRight ? handleX + gap : handleX - gap - size;
+
+  return {
+    left: clamp(preferredLeft, 0, Math.max(0, surfaceSize.width - size)),
+    top: clamp(handleY - size / 2, 0, Math.max(0, surfaceSize.height - size)),
+  };
 }

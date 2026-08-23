@@ -17,7 +17,18 @@ const publicEnvSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.url(),
 
   /** Supabase project origin, e.g. https://<ref>.supabase.co */
-  NEXT_PUBLIC_SUPABASE_URL: z.url(),
+  NEXT_PUBLIC_SUPABASE_URL: z
+    .url()
+    .refine(
+      (value) => {
+        const url = new URL(value);
+        return url.pathname === "/" && url.search === "" && url.hash === "";
+      },
+      {
+        message:
+          "must be the Supabase project origin only, e.g. https://<ref>.supabase.co",
+      },
+    ),
 
   /**
    * Supabase publishable key (formerly the anon key). Public on purpose.
