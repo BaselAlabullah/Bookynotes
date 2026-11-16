@@ -43,13 +43,33 @@ export function remapRectBetweenPageCrops(
 
   if (!oldScanToPhoto || !photoToNewScan) return null;
 
-  const projected = rectFromProjectedCorners(rect, (point) =>
-    projectPoint(projectPoint(point, oldScanToPhoto), photoToNewScan),
+  const projected = rectFromProjectedCorners(
+    rect,
+    (point) => projectPoint(projectPoint(point, oldScanToPhoto), photoToNewScan),
+    false,
   );
 
-  return projected.width < MIN_RECT_SIZE || projected.height < MIN_RECT_SIZE
-    ? null
-    : projected;
+  // Check the unbounded projection first. Clamping first silently clips notes
+  // that only partly fall outside the new crop. Allow floating-point noise.
+  const epsilon = 1e-6;
+  if (
+    !Object.values(projected).every(Number.isFinite) ||
+    projected.x < -epsilon ||
+    projected.y < -epsilon ||
+    projected.x + projected.width > 1 + epsilon ||
+    projected.y + projected.height > 1 + epsilon ||
+    projected.width < MIN_RECT_SIZE ||
+    projected.height < MIN_RECT_SIZE
+  ) {
+    return null;
+  }
+
+  return {
+    x: clamp01(projected.x),
+    y: clamp01(projected.y),
+    width: clamp01(projected.x + projected.width) - clamp01(projected.x),
+    height: clamp01(projected.y + projected.height) - clamp01(projected.y),
+  };
 }
 
 /** Corners of the pixels that actually became the flattened image. */
@@ -203,6 +223,7 @@ function projectPoint(point: Point, matrix: HomographyMatrix): Point {
 function rectFromProjectedCorners(
   rect: NormalizedRect,
   project: (point: Point) => Point,
+  clamp = true,
 ): NormalizedRect {
   const points = [
     project({ x: rect.x, y: rect.y }),
@@ -210,10 +231,11 @@ function rectFromProjectedCorners(
     project({ x: rect.x + rect.width, y: rect.y + rect.height }),
     project({ x: rect.x, y: rect.y + rect.height }),
   ];
-  const left = clamp01(Math.min(...points.map((point) => point.x)));
-  const right = clamp01(Math.max(...points.map((point) => point.x)));
-  const top = clamp01(Math.min(...points.map((point) => point.y)));
-  const bottom = clamp01(Math.max(...points.map((point) => point.y)));
+  const bound = clamp ? clamp01 : (value: number) => value;
+  const left = bound(Math.min(...points.map((point) => point.x)));
+  const right = bound(Math.max(...points.map((point) => point.x)));
+  const top = bound(Math.min(...points.map((point) => point.y)));
+  const bottom = bound(Math.max(...points.map((point) => point.y)));
 
   return {
     x: left,
@@ -224,3 +246,40 @@ function rectFromProjectedCorners(
 }
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
+export type Projection = {
+  scanRectToOriginalRect: (rect: NormalizedRect) => NormalizedRect;
+  originalRectToScanRect: (rect: NormalizedRect) => NormalizedRect | null;
+};
+
+export function buildOriginalProjection(corners: PageCorners | null): Projection | null {
+  if (!corners) {
+    return null;
+  }
+
+  // The processor pulls the crop edge inward by 0.5% before warping. Use the
+  // same corners here so overlays on the retained photograph match the pixels
+  // that actually became the reading image.
+  const ordered = canonicalPageCorners(corners);
+  const scanToOriginal = findHomography(UNIT_CORNERS, ordered);
+  const originalToScan = findHomography(ordered, UNIT_CORNERS);
+
+  if (!scanToOriginal || !originalToScan) {
+    return null;
+  }
+
+  return {
+    scanRectToOriginalRect: (rect) =>
+      rectFromProjectedCorners(rect, (point) => projectPoint(point, scanToOriginal)),
+    originalRectToScanRect: (rect) => {
+      const projected = rectFromProjectedCorners(rect, (point) =>
+        projectPoint(point, originalToScan),
+      );
+
+      return projected.width < 0.005 &&
+        projected.height < 0.005
+        ? null
+        : projected;
+    },
+  };
+}

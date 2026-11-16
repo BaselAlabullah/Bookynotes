@@ -3,12 +3,14 @@ import { db } from "@/db/client";
 import type { PageId, UserId } from "@/db/ids";
 import {
   countAnnotationStatusesForPages,
-  countAnnotationsForPages,
   listAnnotationsForPage,
   type AnnotationStatusCounts,
   updateRegionAnnotationRects,
 } from "@/features/annotations/annotations.repository";
-import { isRegionAnnotation } from "@/features/annotations/annotations.types";
+import {
+  isRegionAnnotation,
+  type Annotation,
+} from "@/features/annotations/annotations.types";
 import { findBook } from "@/features/books/books.repository";
 import {
   isPageProcessorConfigured,
@@ -28,16 +30,19 @@ import {
   deletePage,
   findPage,
   insertPage,
+  lockPage,
   updatePageGeometry,
 } from "./pages.repository";
 import type {
   CompleteUploadInput,
+  PageCorners,
   UpdatePageCornersInput,
   UploadTargetInput,
 } from "./pages.schema";
 import { remapRectBetweenPageCrops } from "./pages.projection";
-import { buildStorageKey, isStorageKeyOwnedBy } from "./pages.storage-key";
 import {
+  buildStorageKey,
+  isStorageKeyOwnedBy,
   flattenedKeyFor,
   revisedFlattenedKeyFor,
 } from "./pages.storage-key";
@@ -110,19 +115,21 @@ export async function completeUpload(
     return { status: "missing-object" };
   }
 
-  // The bytes are read once here and reused for everything that follows: the
-  // flattening, the thumbnail, and the dimensions. Each of those used to fetch
-  // the object separately.
+  // Read the upload for thumbnail generation. If processing succeeds, fetch
+  // the corrected image instead; the processor reads storage independently.
   const uploaded = await tryReadObject(input.storageKey);
 
   if (!uploaded) {
     return { status: "missing-object" };
   }
 
-  // Flatten the page, if a processor is running. When it is not — the normal
-  // case on the deployed instance — `canonical` is simply what was uploaded and
-  // nothing downstream can tell the difference.
-  const canonical = await tryRectify(uploaded, input.storageKey, input.corners);
+  // Flatten when requested and configured; otherwise keep the upload.
+  const canonical = await tryRectify(
+    uploaded,
+    input.storageKey,
+    input.corners,
+    input.straighten,
+  );
 
   const thumbnailStorageKey = await tryBuildThumbnail(
     canonical.bytes,
@@ -218,6 +225,7 @@ async function tryRectify(
   uploaded: Buffer,
   storageKey: string,
   corners?: readonly { x: number; y: number }[],
+  straighten = true,
 ): Promise<CanonicalImage> {
   const untouched: CanonicalImage = {
     bytes: uploaded,
@@ -227,7 +235,7 @@ async function tryRectify(
     height: null,
   };
 
-  if (!isPageProcessorConfigured()) {
+  if (!straighten || !isPageProcessorConfigured()) {
     return untouched;
   }
 
@@ -294,7 +302,40 @@ export type UpdatePageCornersResult =
   | { status: "source-unreadable" }
   | { status: "processing-failed" }
   | { status: "annotations-cannot-be-remapped" }
+  | { status: "page-changed" }
   | { status: "update-failed" };
+
+class CornerUpdateConflict extends Error {
+  constructor(readonly status: "page-changed" | "annotations-cannot-be-remapped") {
+    super(status);
+  }
+}
+
+function remapAnnotations(
+  page: Page,
+  annotations: Annotation[],
+  corners: PageCorners,
+) {
+  const regions = annotations.filter(isRegionAnnotation);
+  if (page.originalStorageKey && !page.pageCorners && regions.length > 0) return null;
+
+  const updates = [];
+  for (const annotation of regions) {
+    const rect = remapRectBetweenPageCrops(
+      {
+        x: annotation.rectX,
+        y: annotation.rectY,
+        width: annotation.rectWidth,
+        height: annotation.rectHeight,
+      },
+      page.originalStorageKey ? page.pageCorners : null,
+      corners,
+    );
+    if (!rect) return null;
+    updates.push({ annotationId: annotation.id, rect });
+  }
+  return updates;
+}
 
 /**
  * Re-straighten a saved page from its retained source photograph.
@@ -317,33 +358,8 @@ export async function updatePageCorners(
 
   if (!sourceExists) return { status: "source-unreadable" };
 
-  const regionAnnotations = (await listAnnotationsForPage(userId, page.id)).filter(
-    isRegionAnnotation,
-  );
-
-  // An automatically detected old crop retained no corners, so there is no
-  // honest transform back to the source photograph. Editing remains safe when
-  // no image annotations exist; otherwise the user must keep the old crop.
-  if (page.originalStorageKey && !page.pageCorners && regionAnnotations.length > 0) {
-    return { status: "annotations-cannot-be-remapped" };
-  }
-
-  const oldCorners = page.originalStorageKey ? page.pageCorners : null;
-  const annotationUpdates = regionAnnotations.map((annotation) => ({
-    annotationId: annotation.id,
-    rect: remapRectBetweenPageCrops(
-      {
-        x: annotation.rectX,
-        y: annotation.rectY,
-        width: annotation.rectWidth,
-        height: annotation.rectHeight,
-      },
-      oldCorners,
-      input.corners,
-    ),
-  }));
-
-  if (annotationUpdates.some((update) => update.rect === null)) {
+  const annotations = await listAnnotationsForPage(userId, page.id);
+  if (!remapAnnotations(page, annotations, input.corners)) {
     return { status: "annotations-cannot-be-remapped" };
   }
 
@@ -360,7 +376,6 @@ export async function updatePageCorners(
   }
 
   const newThumbnailKey = thumbnailKeyFor(newStorageKey);
-  let thumbnailStored = false;
 
   try {
     const processedBytes = await tryReadObject(newStorageKey);
@@ -371,7 +386,6 @@ export async function updatePageCorners(
 
     const thumbnail = await buildThumbnail(processedBytes);
     await uploadObject(newThumbnailKey, thumbnail, "image/jpeg");
-    thumbnailStored = true;
   } catch {
     await removeObjects([newStorageKey, newThumbnailKey]).catch(() => undefined);
     return { status: "update-failed" };
@@ -381,10 +395,27 @@ export async function updatePageCorners(
 
   try {
     updatedPage = await db.transaction(async (transaction) => {
+      // No lock is held during image processing. After taking the same lock
+      // used by note creation, include notes saved while processing ran and
+      // reject a concurrent crop save instead of overwriting newer geometry.
+      const currentPage = await lockPage(transaction, userId, page.id);
+      if (!currentPage || currentPage.storageKey !== page.storageKey) {
+        throw new CornerUpdateConflict("page-changed");
+      }
+      const currentAnnotations = await listAnnotationsForPage(
+        userId, page.id, transaction,
+      );
+      const annotationUpdates = remapAnnotations(
+        currentPage, currentAnnotations, input.corners,
+      );
+      if (!annotationUpdates) {
+        throw new CornerUpdateConflict("annotations-cannot-be-remapped");
+      }
+
       const updated = await updatePageGeometry(transaction, userId, page.id, {
         storageKey: newStorageKey,
         originalStorageKey: sourceStorageKey,
-        thumbnailStorageKey: thumbnailStored ? newThumbnailKey : null,
+        thumbnailStorageKey: newThumbnailKey,
         pageCorners: input.corners,
         imageWidth: processed.width,
         imageHeight: processed.height,
@@ -396,11 +427,7 @@ export async function updatePageCorners(
         transaction,
         userId,
         page.id,
-        annotationUpdates.map((update) => ({
-          annotationId: update.annotationId,
-          // Proven non-null by the check above.
-          rect: update.rect!,
-        })),
+        annotationUpdates,
       );
 
       if (!annotationsUpdated) {
@@ -409,8 +436,9 @@ export async function updatePageCorners(
 
       return updated;
     });
-  } catch {
+  } catch (error) {
     await removeObjects([newStorageKey, newThumbnailKey]).catch(() => undefined);
+    if (error instanceof CornerUpdateConflict) return { status: error.status };
     return { status: "update-failed" };
   }
 
@@ -427,13 +455,6 @@ export async function updatePageCorners(
   }
 
   return { status: "updated", page: updatedPage, cleanupIncomplete };
-}
-
-export async function getPageDeletionImpacts(
-  userId: UserId,
-  pageIds: PageId[],
-): Promise<Map<PageId, number>> {
-  return countAnnotationsForPages(userId, pageIds);
 }
 
 export type PageDashboardStats = AnnotationStatusCounts;

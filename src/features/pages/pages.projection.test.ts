@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { PageCorners } from "./pages.schema";
-import { orderPageCorners, remapRectBetweenPageCrops } from "./pages.projection";
+import { buildOriginalProjection, orderPageCorners, remapRectBetweenPageCrops } from "./pages.projection";
 
 const insetSquare: PageCorners = [
   { x: 0.25, y: 0.25 },
@@ -11,6 +11,27 @@ const insetSquare: PageCorners = [
 ];
 
 describe("remapRectBetweenPageCrops", () => {
+  test("refuses a crop that would clip only part of a note", () => {
+    expect(remapRectBetweenPageCrops(
+      { x: 0.2, y: 0.3, width: 0.2, height: 0.1 }, null, insetSquare,
+    )).toBeNull();
+  });
+
+  test("keeps edge-aligned notes when saving the same crop", () => {
+    const result = remapRectBetweenPageCrops(
+      { x: 0, y: 0, width: 1, height: 1 }, insetSquare, insetSquare,
+    );
+    expect(result).not.toBeNull();
+    expect(result?.width).toBeCloseTo(1);
+    expect(result?.height).toBeCloseTo(1);
+  });
+
+  test("rejects degenerate corners", () => {
+    expect(remapRectBetweenPageCrops(
+      { x: 0.3, y: 0.3, width: 0.2, height: 0.1 }, null,
+      [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }],
+    )).toBeNull();
+  });
   test("keeps a rectangle stable when the saved corners do not change", () => {
     const result = remapRectBetweenPageCrops(
       { x: 0.2, y: 0.4, width: 0.3, height: 0.08 },
@@ -47,6 +68,29 @@ describe("remapRectBetweenPageCrops", () => {
         insetSquare,
       ),
     ).toBeNull();
+  });
+});
+
+describe("original-photo projection", () => {
+  test("round trips a note between a rectangular crop and the photograph", () => {
+    const projection = buildOriginalProjection(insetSquare)!;
+    const rect = { x: 0.2, y: 0.3, width: 0.3, height: 0.1 };
+    const restored = projection.originalRectToScanRect(projection.scanRectToOriginalRect(rect));
+    expect(restored?.x).toBeCloseTo(rect.x);
+    expect(restored?.y).toBeCloseTo(rect.y);
+    expect(restored?.width).toBeCloseTo(rect.width);
+    expect(restored?.height).toBeCloseTo(rect.height);
+  });
+
+  test("still clips a new selection drawn across the photo's crop boundary", () => {
+    const projection = buildOriginalProjection(insetSquare)!;
+    const selected = projection.originalRectToScanRect({ x: 0.2, y: 0.3, width: 0.2, height: 0.1 });
+    expect(selected?.x).toBe(0);
+    expect(selected?.width).toBeGreaterThan(0);
+  });
+
+  test("does not invent a projection when corners are unknown", () => {
+    expect(buildOriginalProjection(null)).toBeNull();
   });
 });
 

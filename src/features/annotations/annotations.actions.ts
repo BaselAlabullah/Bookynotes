@@ -50,22 +50,22 @@ export async function createAnnotationAction(
     };
   }
 
-  const annotation = await createAnnotation(user.id, {
-    pageId: parsed.data.pageId,
-    rect: parsed.data.rect,
-    userComment: parsed.data.userComment,
-  });
+  const result = await createAnnotation(user.id, parsed.data);
 
-  if (!annotation) {
+  if (result.status === "not-found") {
     // The page does not exist, or is not theirs. The same answer for both.
     return { error: "That page could not be found.", createdId: null };
+  }
+
+  if (result.status === "stale-image") {
+    return { error: "The page corners changed. Reload the page and select the passage again.", createdId: null };
   }
 
   // Re-renders the page's server components, so the annotation list picks up
   // the new row without the client keeping its own copy in step.
   revalidatePath("/books", "layout");
 
-  return { error: null, createdId: annotation.id };
+  return { error: null, createdId: result.annotation.id };
 }
 
 /**

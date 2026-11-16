@@ -29,8 +29,9 @@ type AnnotationContentUpdate = {
 export async function insertAnnotation(
   userId: UserId,
   input: NewAnnotation,
+  transaction: DatabaseTransaction,
 ): Promise<Annotation> {
-  const [created] = await db
+  const [created] = await transaction
     .insert(annotations)
     .values({
       userId,
@@ -94,8 +95,9 @@ export async function insertTextAnnotation(
 export async function listAnnotationsForPage(
   userId: UserId,
   pageId: PageId,
+  connection: typeof db | DatabaseTransaction = db,
 ): Promise<Annotation[]> {
-  return db
+  return connection
     .select()
     .from(annotations)
     .where(and(eq(annotations.pageId, pageId), eq(annotations.userId, userId)))
@@ -189,11 +191,14 @@ export async function recordEnrichmentFailure(
   annotationId: AnnotationId,
   reason: string,
   isTerminal: boolean,
+  options: { countAttempt?: boolean } = {},
 ): Promise<Annotation | null> {
   const [updated] = await db
     .update(annotations)
     .set({
-      retryCount: sql`${annotations.retryCount} + 1`,
+      ...(options.countAttempt === false
+        ? {}
+        : { retryCount: sql`${annotations.retryCount} + 1` }),
       enrichmentError: reason,
       enrichmentStatus: isTerminal ? "failed" : "pending",
       updatedAt: new Date(),
@@ -269,23 +274,6 @@ export async function deleteAnnotation(
     .returning({ id: annotations.id });
 
   return deleted.length > 0;
-}
-
-export async function countAnnotationsForPages(
-  userId: UserId,
-  pageIds: PageId[],
-): Promise<Map<PageId, number>> {
-  if (pageIds.length === 0) return new Map();
-
-  const rows = await db
-    .select({ pageId: annotations.pageId, count: sql<number>`count(*)::int` })
-    .from(annotations)
-    .where(
-      and(eq(annotations.userId, userId), inArray(annotations.pageId, pageIds)),
-    )
-    .groupBy(annotations.pageId);
-
-  return new Map(rows.map((row) => [row.pageId, row.count]));
 }
 
 export type AnnotationStatusCounts = {

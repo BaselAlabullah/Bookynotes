@@ -2581,3 +2581,34 @@ the rectifier: a bad deploy can affect both the web app and the processor, and
 the Python dependencies now contribute to the same project build. That is
 acceptable for this app because the processor remains optional and the upload
 path still degrades to the original photograph.
+
+
+---
+
+## 0101 ? Corner saves and region-note creation share a short page lock
+
+**Problem.** A corner save previously read annotations before image processing.
+A note created while processing ran could miss the later remapping, even though
+updates to the page and the already-known notes were transactional. Concurrent
+corner saves could also overwrite geometry derived from a stale page snapshot.
+
+**Decision.** Keep storage and OpenCV work outside the transaction. Before
+committing geometry, lock the owned page row, verify its image storage key still
+matches the starting version, and read the current annotations inside that
+transaction. Region-note creation takes the same lock and compares the image
+key sent by the browser before inserting. Fresh derived image keys already
+identify geometry versions, so this needs no database migration. A stale client
+must reload and redraw its selection rather than save coordinates on a new crop.
+
+The shared TypeScript projection module now serves both the original-photo
+canvas and corner saves. Saves validate projected bounds before clamping, which
+rejects partial clipping as well as completely excluded notes. New selections
+on the original-photo canvas retain their existing clipping behavior. This does
+not change the bounding-box approximation documented in 0097.
+
+**Why.** A transaction around the entire processor call would hold database locks
+during network and image work. A version check alone would not protect notes
+inserted concurrently. The shared lock and fresh annotation read cover both
+orders while keeping the lock limited to database operations. Regression tests
+cover late notes, conflicting crops, partial clipping, stale selections, and
+cleanup of derived objects after a refused save.

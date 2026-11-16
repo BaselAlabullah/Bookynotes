@@ -47,13 +47,11 @@ for nothing, and request-body limits are often well below that.
 - **Duplicate page numbers are caught by the unique constraint**, not by a
   read-then-write check that would race.
 
-## Known gap
+## Deletion
 
-Deleting a page row does not delete its object. Postgres cascades govern rows
-and know nothing about a bucket, so a deleted page, book or user leaves its
-images behind. Nothing triggers this yet — there is no delete UI. When one is
-added, remove the object first and the row second, so a failure leaves a
-recoverable orphan rather than a row pointing at nothing.
+The deletion service collects storage keys, deletes the row and its annotations,
+then removes the images. Failed storage cleanup is reported separately and can
+be retried with the orphan sweep; it does not leave a live row with missing images.
 
 ## Straightening a page
 
@@ -76,7 +74,10 @@ page and thumbnail under fresh keys before changing the row. Existing region
 annotations are projected from the old crop through the source photograph into
 the new crop in the same database transaction as the page update. A crop that
 would remove an existing annotation is refused rather than silently moving or
-destroying the note.
+destroying the note, including crops that would clip only part of a note.
+The save takes a short page-row lock after processing, re-reads the current
+annotations, and rejects concurrent geometry changes. Region-note creation uses
+the same lock and checks the displayed image's storage key to reject stale selections.
 
 ## Reading view
 
@@ -86,7 +87,7 @@ one thing rendered twice:
 | | anchor | what it is |
 | --- | --- | --- |
 | **Original** | normalized coordinates | the photograph. It cannot be wrong, because it is not an interpretation. |
-| **Reading** | (text ranges, next step) | the transcript. What a model believed it read. |
+| **Reading** | character ranges and quoted text | a model-generated or manually entered transcript. |
 
 The transcript is real reflowing text, not a picture of text — selectable,
 copyable, resizable, readable by a screen reader. Rendering it back into an

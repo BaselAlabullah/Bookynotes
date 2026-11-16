@@ -84,9 +84,8 @@ export async function enrichAnnotation(
   const attemptsSoFar = options.force ? 0 : annotation.retryCount;
 
   try {
-    // Enrichment is the one place image bytes pass through this server, and it
-    // is unavoidable: the model needs pixels, and the crop must be one we
-    // produced rather than one a client handed us. See DECISIONS 0039.
+    // Read the stored image to build a trusted crop for the model.
+    // See DECISIONS 0039.
     const signed = await createSignedRead(page.storageKey);
     const response = await fetch(signed.url);
 
@@ -133,6 +132,7 @@ export async function enrichAnnotation(
         annotationId,
         "The model is rate limited right now. Try again shortly.",
         false,
+        { countAttempt: false },
       );
 
       return {

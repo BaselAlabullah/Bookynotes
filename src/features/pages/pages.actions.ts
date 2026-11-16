@@ -68,5 +68,7 @@ export async function updatePageCornersAction(
       };
     case "update-failed":
       return { ok: false, message: "The updated page could not be saved." };
+    case "page-changed":
+      return { ok: false, message: "This page changed while it was being straightened. Reload it and try again." };
   }
 }

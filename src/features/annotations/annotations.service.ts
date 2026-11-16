@@ -1,5 +1,6 @@
 import type { UserId } from "@/db/ids";
-import { findPage } from "@/features/pages/pages.repository";
+import { db } from "@/db/client";
+import { findPage, lockPage } from "@/features/pages/pages.repository";
 
 import {
   findAnnotation,
@@ -18,25 +19,31 @@ import type {
 /**
  * Create an annotation on a page the user owns.
  *
- * Same shape as `pages.service.createPage`, and for the same reason: the
- * repository cannot check a parent it is not allowed to read.
+ * The service checks page ownership and image version while holding the page
+ * lock shared with corner updates. The repository only writes the annotation.
  *
  * This function returns as soon as the row is written. It does not call the
  * vision model, does not await anything slow, and has no idea that enrichment
  * exists — the row leaves here with `enrichment_status = 'pending'` and phase 7
  * picks it up from a separate request.
  */
+export type CreateRegionAnnotationResult =
+  | { status: "created"; annotation: Annotation }
+  | { status: "not-found" }
+  | { status: "stale-image" };
+
 export async function createAnnotation(
   userId: UserId,
   input: NewAnnotation,
-): Promise<Annotation | null> {
-  const page = await findPage(userId, input.pageId);
+): Promise<CreateRegionAnnotationResult> {
+  return db.transaction(async (transaction) => {
+    const page = await lockPage(transaction, userId, input.pageId);
+    if (!page) return { status: "not-found" };
+    if (page.storageKey !== input.imageStorageKey) return { status: "stale-image" };
 
-  if (!page) {
-    return null;
-  }
-
-  return insertAnnotation(userId, input);
+    const annotation = await insertAnnotation(userId, input, transaction);
+    return { status: "created", annotation };
+  });
 }
 
 export type CreateTextAnnotationResult =

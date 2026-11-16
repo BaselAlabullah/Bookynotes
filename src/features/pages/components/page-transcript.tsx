@@ -40,19 +40,22 @@ export function PageTranscript({
   onSelect,
 }: PageTranscriptProps) {
   const router = useRouter();
-  const [isGeminiWorking, setIsGeminiWorking] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [optimisticTranscript, setOptimisticTranscript] = useState<string | null>(
-    null,
-  );
+  const [optimisticTranscript, setOptimisticTranscript] = useState<{
+    text: string;
+    base: string | null;
+  } | null>(null);
   const [draftText, setDraftText] = useState(transcript ?? "");
   const [failure, setFailure] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const activeTranscript = optimisticTranscript ?? transcript;
+  const activeTranscript = optimisticTranscript?.base === transcript
+    ? optimisticTranscript.text
+    : transcript;
 
-  async function transcribeWithGemini(force = false) {
-    setIsGeminiWorking(true);
+  async function transcribeWithModel(force = false) {
+    setIsTranscribing(true);
     setFailure(null);
     setNotice(null);
 
@@ -72,16 +75,17 @@ export function PageTranscript({
         return;
       }
 
+      setOptimisticTranscript(null);
       setIsEditing(false);
       setNotice(
         force
-          ? "Gemini re-read the page and replaced the transcript."
-          : "Gemini read the page and saved the transcript.",
+          ? "The model re-read the page and replaced the transcript."
+          : "The model read the page and saved the transcript.",
       );
     } catch {
       setFailure("Could not reach the transcription service.");
     } finally {
-      setIsGeminiWorking(false);
+      setIsTranscribing(false);
       router.refresh();
     }
   }
@@ -117,12 +121,12 @@ export function PageTranscript({
       }
 
       setDraftText(text);
-      setOptimisticTranscript(text);
+      setOptimisticTranscript({ text, base: transcript });
       setIsEditing(false);
       setNotice(
         hadTranscript
           ? "Saved your transcript edits."
-          : "Saved the manual transcript. You can now select text notes without using Gemini.",
+          : "Saved the manual transcript. You can now select text notes without using the model.",
       );
       router.refresh();
     } catch {
@@ -170,7 +174,7 @@ export function PageTranscript({
     printedPageNumber !== null &&
     printedPageNumber.trim() !== "" &&
     printedPageNumber.trim() !== String(pageNumber);
-  const isWorking = isGeminiWorking || isSavingEdit;
+  const isWorking = isTranscribing || isSavingEdit;
   const transcriptWordCount = activeTranscript ? countWords(activeTranscript) : 0;
 
   if (activeTranscript && !isEditing) {
@@ -226,11 +230,11 @@ export function PageTranscript({
           </button>
           <button
             type="button"
-            onClick={() => transcribeWithGemini(true)}
+            onClick={() => transcribeWithModel(true)}
             disabled={isWorking}
             className="text-xs uppercase tracking-[0.1em] text-ink-muted underline decoration-rule underline-offset-4 hover:text-ink disabled:opacity-50"
           >
-            {isGeminiWorking ? "Reading..." : "Replace with Gemini"}
+            {isTranscribing ? "Reading..." : "Replace with AI"}
           </button>
         </div>
       </div>
@@ -250,7 +254,7 @@ export function PageTranscript({
           <p className="mt-2 max-w-[58ch] text-sm leading-6 text-ink-muted">
             {activeTranscript
               ? "Fix names or unusual words, then save. Existing text notes keep their quoted text even if offsets later drift."
-              : "Use this when you already have text from an ebook, another OCR tool, or a quick manual transcription. It spends no Gemini quota."}
+              : "Use this when you already have text from an ebook, another OCR tool, or a quick manual transcription. It spends no model quota."}
           </p>
         </div>
       ) : activeTranscript ? (
@@ -270,8 +274,8 @@ export function PageTranscript({
           </h2>
           <p className="mt-2 max-w-[58ch] text-sm leading-6 text-ink-muted">
             {status === "failed"
-              ? "Gemini could not read this page last time. You can retry it, or paste a transcript manually and keep moving."
-              : "Read the photograph with Gemini, or paste text yourself. Manual text is instant, searchable, and free."}
+              ? "The model could not read this page last time. You can retry it, or paste a transcript manually and keep moving."
+              : "Read the photograph with AI, or paste text yourself. Manual text is instant, searchable, and free."}
           </p>
         </div>
       )}
@@ -331,25 +335,25 @@ export function PageTranscript({
       ) : (
         <div className="grid w-full gap-3 sm:grid-cols-2">
           <div className="flex flex-col items-start gap-3 border border-rule bg-paper-raised p-4">
-            <h3 className="font-serif text-lg">Use Gemini</h3>
+            <h3 className="font-serif text-lg">Use AI</h3>
             <p className="text-sm leading-6 text-ink-muted">
               Best when the photograph is all you have. Uses one vision request
               and can hit free-tier limits.
             </p>
           <button
             type="button"
-            onClick={() => transcribeWithGemini(status === "failed")}
+            onClick={() => transcribeWithModel(status === "failed")}
             disabled={isWorking}
             className="bg-accent px-4 py-2 text-sm font-medium text-paper disabled:opacity-60"
           >
-            {isGeminiWorking ? "Reading the page..." : "Read with Gemini"}
+            {isTranscribing ? "Reading the page..." : "Read with AI"}
           </button>
           </div>
 
           <div className="flex flex-col items-start gap-3 border border-rule bg-paper-raised p-4">
             <h3 className="font-serif text-lg">Paste manually</h3>
             <p className="text-sm leading-6 text-ink-muted">
-              Best when you already have the text. Costs no Gemini quota and
+              Best when you already have the text. Costs no model quota and
               unlocks exact text selection notes.
             </p>
             <button

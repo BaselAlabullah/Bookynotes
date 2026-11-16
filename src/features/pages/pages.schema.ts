@@ -65,11 +65,8 @@ export type UpdatePageCornersInput = z.infer<typeof updatePageCornersSchema>;
 /**
  * Step two: the file is uploaded, record the page.
  *
- * `imageWidth` and `imageHeight` are measured by the browser, because the app
- * server never sees the bytes — that is the whole design. They are therefore
- * client-reported and cannot be verified here. The blast radius is contained:
- * wrong dimensions distort only that user's own annotation coordinates on their
- * own page, and the database still rejects anything non-positive.
+ * The browser supplies dimensions after EXIF orientation. They are retained
+ * for unprocessed uploads; rectified images use the processor's dimensions.
  */
 export const completeUploadSchema = z.object({
   bookId: bookIdSchema,
@@ -83,6 +80,8 @@ export const completeUploadSchema = z.object({
   storageKey: z.string().min(1).max(300),
   imageWidth: z.number().int().positive().max(50_000),
   imageHeight: z.number().int().positive().max(50_000),
+  /** Omitted by older clients: preserve their automatic-detection behavior. */
+  straighten: z.boolean().default(true),
 
   /**
    * Where the reader says the page is. Optional: without it the processor

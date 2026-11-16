@@ -47,9 +47,8 @@ type View = "original" | "reading";
  * wrong, because it is not an interpretation. Switching between them is one
  * click, so checking costs nothing.
  *
- * Annotations live on the photograph for now. Anchoring them to text ranges in
- * the transcript is the next step, and a bigger one — a rectangle over
- * reflowing text means nothing.
+ * Region annotations belong to the photograph; text annotations belong to
+ * exact character ranges in the transcript.
  */
 export function PageSurface({
   annotations,
@@ -61,8 +60,7 @@ export function PageSurface({
   ...annotatorProps
 }: PageSurfaceProps) {
   const [view, setView] = useState<View>("original");
-  // Selection is shared across both views, so clicking a note in one and
-  // switching to the other keeps the same annotation current.
+  // Preserve the reading-view selection when switching between views.
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   return (
@@ -99,11 +97,12 @@ export function PageSurface({
       {view === "original" ? (
         <>
           <PageCornerEditor
+            key={annotatorProps.imageStorageKey}
             pageId={annotatorProps.pageId}
             imageUrl={annotatorProps.originalImageUrl ?? annotatorProps.imageUrl}
             initialCorners={annotatorProps.originalPageCorners}
           />
-          <PageAnnotator {...annotatorProps} annotations={annotations} />
+          <PageAnnotator key={annotatorProps.imageStorageKey} {...annotatorProps} annotations={annotations} />
         </>
       ) : (
         <PageTranscript

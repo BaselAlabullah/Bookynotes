@@ -1,7 +1,6 @@
 import type { BookId, UserId } from "@/db/ids";
 import {
   countAnnotationStatusesForPages,
-  countAnnotationsForPages,
 } from "@/features/annotations/annotations.repository";
 import { listPagesForBook, listPagesForBooks } from "@/features/pages/pages.repository";
 import { removeObjects } from "@/integrations/storage/storage.client";
@@ -30,31 +29,6 @@ const emptyBookDashboardStats = (): BookDashboardStats => ({
   failedPassageCount: 0,
   flattenedPageCount: 0,
 });
-
-export async function getBookDeletionImpacts(
-  userId: UserId,
-  bookIds: BookId[],
-): Promise<Map<BookId, BookDeletionImpact>> {
-  const pages = await listPagesForBooks(userId, bookIds);
-  const annotationCounts = await countAnnotationsForPages(
-    userId,
-    pages.map((page) => page.id),
-  );
-  const impacts = new Map<BookId, BookDeletionImpact>();
-
-  for (const bookId of bookIds) {
-    impacts.set(bookId, { pageCount: 0, annotationCount: 0 });
-  }
-
-  for (const page of pages) {
-    const impact = impacts.get(page.bookId);
-    if (!impact) continue;
-    impact.pageCount += 1;
-    impact.annotationCount += annotationCounts.get(page.id) ?? 0;
-  }
-
-  return impacts;
-}
 
 export async function getBookDashboardStats(
   userId: UserId,

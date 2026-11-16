@@ -1,15 +1,16 @@
-import { db } from "@/db/client";
 import type { PageId, UserId } from "@/db/ids";
-import { pages } from "@/db/schema";
 import { createSignedRead } from "@/integrations/storage/storage.client";
 import { transcribePage } from "@/integrations/vision/vision.client";
 import {
   VisionPermanentError,
   VisionRateLimitError,
 } from "@/integrations/vision/vision.types";
-import { and, eq } from "drizzle-orm";
 
-import { findPage } from "./pages.repository";
+import {
+  findPage,
+  savePageTranscript,
+  recordTranscriptionFailure,
+} from "./pages.repository";
 import type { SavePageTranscriptInput } from "./pages.schema";
 import type { Page } from "./pages.types";
 
@@ -48,8 +49,7 @@ export async function transcribePageById(
     return { status: "not-found" };
   }
 
-  // The cache. A page of prose is the most expensive single call this app
-  // makes, and a page does not change once it is uploaded.
+  // Reuse the saved transcript unless the reader requests a replacement.
   if (page.transcriptStatus === "complete" && !options.force) {
     return { status: "cached", page };
   }
@@ -88,17 +88,12 @@ export async function transcribePageById(
       );
     }
 
-    const [updated] = await db
-      .update(pages)
-      .set({
-        transcript: text,
-        transcriptStatus: "complete",
-        transcriptError: null,
-        transcriptPageNumber: result.printedPageNumber.trim() || null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(pages.id, pageId), eq(pages.userId, userId)))
-      .returning();
+    const updated = await savePageTranscript(
+      userId,
+      pageId,
+      text,
+      result.printedPageNumber.trim() || null,
+    );
 
     return updated
       ? { status: "complete", page: updated }
@@ -135,17 +130,12 @@ export async function savePageTranscriptById(
     return { status: "failed", message: "Transcript text cannot be empty." };
   }
 
-  const [updated] = await db
-    .update(pages)
-    .set({
-      transcript: text,
-      transcriptStatus: "complete",
-      transcriptError: null,
-      transcriptPageNumber: input.printedPageNumber?.trim() || null,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(pages.id, pageId), eq(pages.userId, userId)))
-    .returning();
+  const updated = await savePageTranscript(
+    userId,
+    pageId,
+    text,
+    input.printedPageNumber?.trim() || null,
+  );
 
   return updated
     ? { status: "complete", page: updated }
@@ -158,14 +148,7 @@ async function recordFailure(
   message: string,
   isTerminal: boolean,
 ): Promise<TranscriptionOutcome> {
-  await db
-    .update(pages)
-    .set({
-      transcriptStatus: isTerminal ? "failed" : "pending",
-      transcriptError: message,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(pages.id, pageId), eq(pages.userId, userId)));
+  await recordTranscriptionFailure(userId, pageId, message, isTerminal);
 
   return isTerminal
     ? { status: "failed", message }

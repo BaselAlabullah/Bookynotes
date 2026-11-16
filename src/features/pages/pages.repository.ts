@@ -13,7 +13,7 @@ import type { NewPage, Page } from "./pages.types";
  * Note what is missing: this file never checks that `input.bookId` belongs to
  * the user. It cannot — the answer lives in the `books` table, which is not
  * this repository's to read. That check is `pages.service.ts`'s job, and
- * `createPage` here is not exported for use anywhere else.
+ * writes stay scoped to the current user.
  */
 
 export async function insertPage(userId: UserId, input: NewPage): Promise<Page> {
@@ -64,6 +64,56 @@ export async function findPage(
     .limit(1);
 
   return page ?? null;
+}
+
+/** Serialize geometry changes and region-note creation on the owned page. */
+export async function lockPage(
+  transaction: DatabaseTransaction,
+  userId: UserId,
+  pageId: PageId,
+): Promise<Page | null> {
+  const [page] = await transaction
+    .select()
+    .from(pages)
+    .where(and(eq(pages.id, pageId), eq(pages.userId, userId)))
+    .for("update");
+  return page ?? null;
+}
+
+export async function savePageTranscript(
+  userId: UserId,
+  pageId: PageId,
+  transcript: string,
+  printedPageNumber: string | null,
+): Promise<Page | null> {
+  const [updated] = await db
+    .update(pages)
+    .set({
+      transcript,
+      transcriptPageNumber: printedPageNumber,
+      transcriptStatus: "complete",
+      transcriptError: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(pages.id, pageId), eq(pages.userId, userId)))
+    .returning();
+  return updated ?? null;
+}
+
+export async function recordTranscriptionFailure(
+  userId: UserId,
+  pageId: PageId,
+  message: string,
+  isTerminal: boolean,
+): Promise<void> {
+  await db
+    .update(pages)
+    .set({
+      transcriptStatus: isTerminal ? "failed" : "pending",
+      transcriptError: message,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(pages.id, pageId), eq(pages.userId, userId)));
 }
 
 export async function updatePageGeometry(

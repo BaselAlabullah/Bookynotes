@@ -77,6 +77,8 @@ export type NewTextAnnotation = {
 
 export type NewAnnotation = {
   pageId: PageId;
+  /** The image version on which this rectangle was drawn. */
+  imageStorageKey: string;
   rect: NormalizedRect;
   userComment: string;
 };

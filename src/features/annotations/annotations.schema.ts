@@ -33,6 +33,7 @@ export const normalizedRectSchema = z
 
 export const createAnnotationSchema = z.object({
   pageId: z.uuid().transform(asPageId),
+  imageStorageKey: z.string().min(1).max(300),
   rect: normalizedRectSchema,
   userComment: z
     .string()

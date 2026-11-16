@@ -26,7 +26,6 @@ vi.mock("@/features/pages/pages.repository", () => ({
 }));
 
 vi.mock("@/features/annotations/annotations.repository", () => ({
-  countAnnotationsForPages: vi.fn(),
   countAnnotationStatusesForPages: vi.fn(),
 }));
 

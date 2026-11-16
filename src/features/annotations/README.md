@@ -13,12 +13,20 @@ annotations.actions.ts      createAnnotationAction, a Server Function
 components/
   annotation-canvas.tsx     the image, the SVG overlay, the pointer maths
   page-annotator.tsx        state: selection, draft rectangle, zoom
+  original-photo-annotation-canvas.tsx  drawing on the retained source photo
+  annotation-controls.tsx  note editing, extraction display, and clipboard actions
+  use-annotation-enrichment.ts  individual and batch extraction requests
 ```
 
 ## Coordinates
 
 Every rectangle is four floats in `0.0..1.0`, relative to the page image's
-intrinsic size. Pixels are never stored and never cross a boundary.
+intrinsic size. Pixels are never stored and never cross a boundary. Region-note
+creation also sends the displayed image's storage key: the service checks it
+under the page-row lock shared with corner saves, so stale selections are rejected.
+
+Projection between the source photo and corrected crops lives in
+`features/pages/pages.projection.ts`, shared by the canvas and the save service.
 
 The rendering side needs no projection code at all, because the SVG overlay's
 `viewBox` is `0 0 1 1` — the unit square. A stored rectangle is written into the
